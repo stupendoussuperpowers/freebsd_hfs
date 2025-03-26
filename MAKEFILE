@@ -1,0 +1,14 @@
+.SUFFIXES: .c .o
+
+OBJDIR= /usr/obj/
+
+KMOD= hfs 
+SRCS= hfsplus/hfs_vfsops.c \
+	hfsplus/hfs_vnops.c \
+
+SRCS+= vnode_if.h
+
+SYSDIR?= /usr/src
+
+.include <bsd.subdir.mk>
+.include <bsd.kmod.mk>

@@ -1,0 +1,30 @@
+#!/bin/sh
+
+build() {
+    kldunload /usr/obj/sharedcode/hfs.ko
+    mkdir -p /usr/obj/sharedcode/hfsplus
+    make clean && make obj && make
+}
+
+load() {
+    kldload /usr/obj/sharedcode/hfs.ko
+}
+
+test_mount() {
+    mount -t hfs /test.img /hello
+}
+
+default() {
+    echo "<---Building--->"
+    build 
+    echo "<---Loading kmod--->"
+    load 
+    echo "<---Testing mount--->"
+    test_mount 
+}
+
+if [ $# -eq 0 ]; then
+    default
+else
+    "$@"
+fi

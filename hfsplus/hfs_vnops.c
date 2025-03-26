@@ -1,0 +1,66 @@
+#include <sys/param.h>
+#include <sys/module.h>
+#include <sys/kernel.h>
+#include <sys/systm.h>
+#include <sys/mount.h>
+#include <sys/vnode.h>
+
+struct vop_vector hfs_vnodeops = {
+	.vop_default =		&default_vnodeops,
+
+	.vop_access =		VOP_EOPNOTSUPP,
+	.vop_aclcheck =		VOP_EOPNOTSUPP,
+	.vop_advlock =		VOP_EOPNOTSUPP,
+	.vop_bmap =		VOP_EOPNOTSUPP,
+	.vop_cachedlookup =	VOP_EOPNOTSUPP,
+	.vop_close =		VOP_EOPNOTSUPP,
+	.vop_closeextattr =	VOP_EOPNOTSUPP,
+	.vop_create =		VOP_EOPNOTSUPP,
+	.vop_deleteextattr =	VOP_EOPNOTSUPP,
+	.vop_fsync =		VOP_EOPNOTSUPP,
+	.vop_getacl =		VOP_EOPNOTSUPP,
+	.vop_getattr =		VOP_EOPNOTSUPP,
+	.vop_getextattr =	VOP_EOPNOTSUPP,
+	.vop_getwritemount =	VOP_EOPNOTSUPP,
+	.vop_inactive =		VOP_EOPNOTSUPP,
+	.vop_need_inactive =	VOP_EOPNOTSUPP,
+	.vop_islocked =		VOP_EOPNOTSUPP,
+	.vop_ioctl =		VOP_EOPNOTSUPP,
+	.vop_link =		VOP_EOPNOTSUPP,
+	.vop_listextattr =	VOP_EOPNOTSUPP,
+	.vop_lock1 =		VOP_EOPNOTSUPP,
+	.vop_lookup =		VOP_EOPNOTSUPP,
+	.vop_mkdir =		VOP_EOPNOTSUPP,
+	.vop_mknod =		VOP_EOPNOTSUPP,
+	.vop_open =		VOP_EOPNOTSUPP,
+	.vop_openextattr =	VOP_EOPNOTSUPP,
+	.vop_pathconf =		VOP_EOPNOTSUPP,
+	.vop_poll =		VOP_EOPNOTSUPP,
+	.vop_print =		VOP_EOPNOTSUPP,
+	.vop_read =		VOP_EOPNOTSUPP,
+	.vop_readdir =		VOP_EOPNOTSUPP,
+	.vop_readlink =		VOP_EOPNOTSUPP,
+	.vop_reclaim =		VOP_EOPNOTSUPP,
+	.vop_remove =		VOP_EOPNOTSUPP,
+	.vop_rename =		VOP_EOPNOTSUPP,
+	.vop_rmdir =		VOP_EOPNOTSUPP,
+	.vop_setacl =		VOP_EOPNOTSUPP,
+	.vop_setattr =		VOP_EOPNOTSUPP,
+	.vop_setextattr =	VOP_EOPNOTSUPP,
+	.vop_setlabel =		VOP_EOPNOTSUPP,
+	.vop_strategy =		VOP_EOPNOTSUPP,
+	.vop_symlink =		VOP_EOPNOTSUPP,
+	.vop_unlock =		VOP_EOPNOTSUPP,
+	.vop_whiteout =		VOP_EOPNOTSUPP,
+	.vop_write =		VOP_EOPNOTSUPP,
+	.vop_vptofh =		VOP_EOPNOTSUPP,
+	.vop_add_writecount =	VOP_EOPNOTSUPP,
+	.vop_vput_pair =	VOP_EOPNOTSUPP,
+	.vop_set_text =		VOP_EOPNOTSUPP,
+	.vop_unset_text = 	VOP_EOPNOTSUPP,
+	.vop_unp_bind =		VOP_EOPNOTSUPP,
+	.vop_unp_connect =	VOP_EOPNOTSUPP,
+	.vop_unp_detach =	VOP_EOPNOTSUPP,
+};
+
+VFS_VOP_VECTOR_REGISTER(hfs_vnodeops);

@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "vnode.h": "c",
+    "mount.h": "c"
+  }
+}
