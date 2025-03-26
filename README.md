@@ -2,6 +2,8 @@
 
 Glue code to get a filesystem working. Doesn't yet port features from XNU/HFS.
 
+XNU/HFS code ported from - [](https://github.com/apple-oss-distributions/hfs)
+
 Generates a dynamic kernel mod which registers the filesystem.
 
 To run, load, or test mount -
