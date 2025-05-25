@@ -1,3 +1,16 @@
+Following files have been checked to comply with the build:
+
+hfsplus/hfs_vfsops.c
+hfsplus/hfs_vnops.c
+hfsplus/hfs_cnode.c
+hfsplus/hfs_chash.c
+hfsplus/hfs_encodings.c
+hfsplus/hfs_vfsutils.c
+hfsplus/hfscommon/Misc/FileExtentMapping.c
+hfsplus/hfs_btreeio.c
+
+---
+
 The following general API changes have been accomodated:
 
 VOP_LOCK    -   No thread arg 
