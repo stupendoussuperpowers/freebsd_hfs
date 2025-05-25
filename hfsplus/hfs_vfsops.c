@@ -1,84 +1,614 @@
-#include <sys/param.h>
-#include <sys/module.h>
+#include <sys/fcntl.h>
 #include <sys/kernel.h>
-#include <sys/systm.h>
-#include <sys/mount.h>
 #include <sys/malloc.h>
+#include <sys/module.h>
+#include <sys/mount.h>
+#include <sys/param.h>
+#include <sys/proc.h>
+#include <sys/systm.h>
+#include <sys/vnode.h>
 
+#include <sys/conf.h>
+
+#include <sys/buf.h>
+#include <sys/disk.h>
+#include <sys/endian.h>
+
+#include <hfsplus/hfs.h>
+#include <hfsplus/hfs_endian.h>
+#include <hfsplus/hfs_mount.h>
 
 static MALLOC_DEFINE(M_HFSMNT, "HFS mount", "HFS mount data");
 
-static int hfs_mount(struct mount *mp) {
-    printf("---hfs_mount---\n");
+static int hfs_mountfs(struct vnode* devvp, struct mount* mp) {
+  proc_t* p = curthread;
+  int retval = E_NONE;
+  struct hfsmount* hfsmp;
+  struct buf* bp;
+  struct cdev* dev;
+  HFSMasterDirectoryBlock* mdbp;
+  int ronly;
+  int mntwrapper;
+  struct ucred* cred;
+  u_int64_t disksize;
+  u_int64_t blkcnt;
+  u_int32_t blksize;
+#ifdef DARWIN
+  int i;
+  u_int32_t minblksize;
+  u_int32_t iswritable;
+#else
+  u_int secsize;
+  off_t medsize;
+#endif
+  daddr_t mdb_offset;
 
-    if(mp->mnt_data == NULL) {
-        mp->mnt_data = malloc(100, M_TEMP, M_WAITOK);
+  dev = devvp->v_rdev;
+  cred = p ? p->td_proc->p_ucred : NOCRED;
+  mntwrapper = 0;
+  /*
+   * Disallow multiple mounts of the same device.
+   * Disallow mounting of a device that is currently in use
+   * (except for root, which might share swap device for miniroot).
+   * Flush out any old buffers remaining from a previous use.
+   */
+  if (dev->si_mountpt != NULL)
+    return (EBUSY);
+  // if (vcount(devvp) > 1)
+  //  return (EBUSY);
+  vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+  retval = vinvalbuf(devvp, V_SAVE, 0, 0);
+  VOP_UNLOCK(devvp);
+  if (retval)
+    return (retval);
+
+  ronly = (mp->mnt_flag & MNT_RDONLY) != 0;
+  vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+#if defined(__FreeBSD__) && __FreeBSD_version >= 501103 /* YYY no bump */
+  retval = VOP_OPEN(devvp, ronly ? FREAD : FREAD | FWRITE, FSCRED, p, NULL);
+#else
+  retval = VOP_OPEN(devvp, ronly ? FREAD : FREAD | FWRITE, FSCRED, p, NULL);
+#endif
+  VOP_UNLOCK(devvp);
+  if (retval)
+    return (retval);
+
+  bp = NULL;
+  hfsmp = NULL;
+  mdbp = NULL;
+#ifdef DARWIN
+  minblksize = kHFSBlockSize;
+
+  /* Get the real physical block size. */
+  if (VOP_IOCTL(devvp, DKIOCGETBLOCKSIZE, (caddr_t)&blksize, 0, cred, p)) {
+    retval = ENXIO;
+    goto error_exit;
+  }
+  /* Switch to 512 byte sectors (temporarily) */
+  if (blksize > 512) {
+    u_int32_t size512 = 512;
+
+    if (VOP_IOCTL(devvp, DKIOCSETBLOCKSIZE, (caddr_t)&size512, FWRITE, cred,
+                  p)) {
+      retval = ENXIO;
+      goto error_exit;
+    }
+  }
+  /* Get the number of 512 byte physical blocks. */
+  if (VOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt, 0, cred, p)) {
+    retval = ENXIO;
+    goto error_exit;
+  }
+  /* Compute an accurate disk size (i.e. within 512 bytes) */
+  disksize = blkcnt * (u_int64_t)512;
+
+  /*
+   * There are only 31 bits worth of block count in
+   * the buffer cache.  So for large volumes a 4K
+   * physical block size is needed.
+   */
+  if (blkcnt > (u_int64_t)0x000000007fffffff) {
+    minblksize = blksize = 4096;
+  }
+  /* Now switch to our prefered physical block size. */
+  if (blksize > 512) {
+    if (VOP_IOCTL(devvp, DKIOCSETBLOCKSIZE, (caddr_t)&blksize, FWRITE, cred,
+                  p)) {
+      retval = ENXIO;
+      goto error_exit;
+    }
+    /* Get the count of physical blocks. */
+    if (VOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt, 0, cred, p)) {
+      retval = ENXIO;
+      goto error_exit;
+    }
+  }
+
+  /*
+   * At this point:
+   *   minblksize is the minimum physical block size
+   *   blksize has our prefered physical block size
+   *   blkcnt has the total number of physical blocks
+   */
+  devvp->v_specsize = blksize;
+
+  /* cache the IO attributes */
+  if ((retval = vfs_init_io_attributes(devvp, mp))) {
+    printf("hfs_mountfs: vfs_init_io_attributes returned %d\n", retval);
+    return (retval);
+  }
+#else  /* !DARWIN */
+  /* Get the real physical block size. */
+  if (VOP_IOCTL(devvp, DIOCGSECTORSIZE, (caddr_t)&secsize, 0, cred, p)) {
+    retval = ENXIO;
+    goto error_exit;
+  }
+  if (VOP_IOCTL(devvp, DIOCGMEDIASIZE, (caddr_t)&medsize, 0, cred, p)) {
+    retval = ENXIO;
+    goto error_exit;
+  }
+  blksize = secsize;
+  blkcnt = medsize / secsize;
+  disksize = medsize;
+#endif /* DARWIN */
+
+  mdb_offset = HFS_PRI_SECTOR(blksize);
+  if ((retval =
+           meta_bread(devvp, HFS_PRI_SECTOR(blksize), blksize, cred, &bp))) {
+    goto error_exit;
+  }
+  mdbp = (HFSMasterDirectoryBlock*)MALLOC(kMDBSize, M_TEMP, M_WAITOK);
+  bcopy(bp->b_data + HFS_PRI_OFFSET(blksize), mdbp, kMDBSize);
+  brelse(bp);
+  bp = NULL;
+
+  hfsmp = (struct hfsmount*)MALLOC(sizeof(struct hfsmount), M_HFSMNT, M_WAITOK);
+#if HFS_DIAGNOSTIC
+  printf("hfsmount: allocated struct hfsmount at %p\n", hfsmp);
+#endif
+  bzero(hfsmp, sizeof(struct hfsmount));
+
+  mtx_init(&hfsmp->hfs_renamelock, "hfs rename lock", NULL, MTX_DEF);
+
+  /*
+   *  Init the volume information structure
+   */
+  mp->mnt_data = (qaddr_t)hfsmp;
+  hfsmp->hfs_mp = mp;               /* Make VFSTOHFS work */
+  hfsmp->hfs_vcb.vcb_hfsmp = hfsmp; /* Make VCBTOHFS work */
+  hfsmp->hfs_raw_dev = devvp->v_rdev;
+  hfsmp->hfs_devvp = devvp;
+  hfsmp->hfs_phys_block_size = blksize;
+  hfsmp->hfs_phys_block_count = blkcnt;
+  hfsmp->hfs_media_writeable = 1;
+  hfsmp->hfs_fs_ronly = ronly;
+  hfsmp->hfs_unknownpermissions =
+      ((mp->mnt_flag & MNT_UNKNOWNPERMISSIONS) != 0);
+#ifdef DARWIN_QUOTA
+  for (i = 0; i < MAXQUOTAS; i++)
+    hfsmp->hfs_qfiles[i].qf_vp = NULLVP;
+#endif
+
+  int error;
+  struct hfs_mount_args* args = NULL;
+  vfs_getopt(mp->mnt_optnew, "hfs_uid", (void**)&args->hfs_uid, &error);
+  printf("HFS_Uid: %u", (unsigned int)args->hfs_uid);
+
+  //  if (args) {
+  // hfsmp->hfs_uid =
+  //     (args->hfs_uid == (uid_t)VNOVAL) ? UNKNOWNUID : args->hfs_uid;
+  // if (hfsmp->hfs_uid == 0xfffffffd)
+  //   hfsmp->hfs_uid = UNKNOWNUID;
+  // hfsmp->hfs_gid =
+  //     (args->hfs_gid == (gid_t)VNOVAL) ? UNKNOWNGID : args->hfs_gid;
+  // if (hfsmp->hfs_gid == 0xfffffffd)
+  //   hfsmp->hfs_gid = UNKNOWNGID;
+  // if (args->hfs_mask != (mode_t)VNOVAL) {
+  //   hfsmp->hfs_dir_mask = args->hfs_mask & ALLPERMS;
+  //   if (args->flags & HFSFSMNT_NOXONFILES) {
+  //     hfsmp->hfs_file_mask = (args->hfs_mask & DEFFILEMODE);
+  //   } else {
+  //     hfsmp->hfs_file_mask = args->hfs_mask & ALLPERMS;
+  //   }
+  // } else {
+  //   hfsmp->hfs_dir_mask = UNKNOWNPERMISSIONS & ALLPERMS; /* 0777: rwx---rwx
+  //   */ hfsmp->hfs_file_mask =
+  //       UNKNOWNPERMISSIONS & DEFFILEMODE; /* 0666: no --x by default? */
+  // }
+  // if ((args->flags != (int)VNOVAL) && (args->flags & HFSFSMNT_WRAPPER))
+  //   mntwrapper = 1;
+  //} else {
+  /* Even w/o explicit mount arguments, MNT_UNKNOWNPERMISSIONS requires
+   * setting up uid, gid, and mask: */
+  if (mp->mnt_flag & MNT_UNKNOWNPERMISSIONS) {
+    hfsmp->hfs_uid = UNKNOWNUID;
+    hfsmp->hfs_gid = UNKNOWNGID;
+    hfsmp->hfs_dir_mask = UNKNOWNPERMISSIONS & ALLPERMS; /* 0777: rwx---rwx */
+    hfsmp->hfs_file_mask =
+        UNKNOWNPERMISSIONS & DEFFILEMODE; /* 0666: no --x by default? */
+  }
+  // }
+
+#ifdef DARWIN
+  /* Find out if disk media is writable. */
+  if (VOP_IOCTL(devvp, DKIOCISWRITABLE, (caddr_t)&iswritable, 0, cred, p) ==
+      0) {
+    if (iswritable)
+      hfsmp->hfs_media_writeable = 1;
+    else
+      hfsmp->hfs_media_writeable = 0;
+  }
+#else
+  hfsmp->hfs_media_writeable = 1; /* YYY how to know if media is writable? */
+#endif
+
+  /* Mount a standard HFS disk */
+  if ((SWAP_BE16(mdbp->drSigWord) == kHFSSigWord) &&
+      (mntwrapper || (SWAP_BE16(mdbp->drEmbedSigWord) != kHFSPlusSigWord))) {
+#ifndef __FreeBSD__ /* YYY bug: must check if mounting root */
+    if (devvp == rootvp) {
+      retval = EINVAL; /* Cannot root from HFS standard disks */
+      goto error_exit;
+    }
+#endif
+    /* HFS disks can only use 512 byte physical blocks */
+    if (blksize > kHFSBlockSize) {
+#ifdef DARWIN
+      blksize = kHFSBlockSize;
+      if (VOP_IOCTL(devvp, DKIOCSETBLOCKSIZE, (caddr_t)&blksize, FWRITE, cred,
+                    p)) {
+        retval = ENXIO;
+        goto error_exit;
+      }
+      if (VOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt, 0, cred, p)) {
+        retval = ENXIO;
+        goto error_exit;
+      }
+      devvp->v_specsize = blksize;
+      hfsmp->hfs_phys_block_size = blksize;
+      hfsmp->hfs_phys_block_count = blkcnt;
+#else  /* !DARWIN */
+      printf("HFS Mount: unsupported physical block size (%u)\n",
+             (u_int)blksize);
+      retval = EINVAL;
+      goto error_exit;
+#endif /* DARWIN */
+    }
+    if (args) {
+      hfsmp->hfs_encoding = args->hfs_encoding;
+      HFSTOVCB(hfsmp)->volumeNameEncodingHint = args->hfs_encoding;
+
+      /* establish the timezone */
+      gTimeZone = args->hfs_timezone;
     }
 
-    vfs_getnewfsid(mp);
-    return (0);
-}
+    retval = hfs_getconverter(hfsmp->hfs_encoding, &hfsmp->hfs_get_unicode,
+                              &hfsmp->hfs_get_hfsname);
+    if (retval)
+      goto error_exit;
 
-static int hfs_root(struct mount *mp, int flags, struct vnode**vpp) {
-    printf("---hfs_root---\n");
+    retval = hfs_MountHFSVolume(hfsmp, mdbp, p);
+    if (retval)
+      (void)hfs_relconverter(hfsmp->hfs_encoding);
 
-    struct vnode *nvp;
-    int retval;
+  } else /* Mount an HFS Plus disk */ {
+    HFSPlusVolumeHeader* vhp;
+    off_t embeddedOffset;
+#ifdef DARWIN_JOURNAL
+    int jnl_disable = 0;
+#endif
 
+    /* Get the embedded Volume Header */
+    if (SWAP_BE16(mdbp->drEmbedSigWord) == kHFSPlusSigWord) {
+      embeddedOffset = SWAP_BE16(mdbp->drAlBlSt) * kHFSBlockSize;
+      embeddedOffset += (u_int64_t)SWAP_BE16(mdbp->drEmbedExtent.startBlock) *
+                        (u_int64_t)SWAP_BE32(mdbp->drAlBlkSiz);
 
-    if((retval = VFS_VGET(mp, rootObjId, LK_EXCLUSIVE, &nvp))) {
-        printf("VFS_VGET failed: %d\n", retval);
-        return (retval);
+      /*
+       * If the embedded volume doesn't start on a block
+       * boundary, then switch the device to a 512-byte
+       * block size so everything will line up on a block
+       * boundary.
+       */
+      if ((embeddedOffset % blksize) != 0) {
+#ifdef DARWIN
+        printf(
+            "HFS Mount: embedded volume offset not"
+            " a multiple of physical block size (%d);"
+            " switching to 512\n",
+            blksize);
+        blksize = 512;
+        if (VOP_IOCTL(devvp, DKIOCSETBLOCKSIZE, (caddr_t)&blksize, FWRITE, cred,
+                      p)) {
+          retval = ENXIO;
+          goto error_exit;
+        }
+        if (VOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt, 0, cred,
+                      p)) {
+          retval = ENXIO;
+          goto error_exit;
+        }
+        /* XXX do we need to call vfs_init_io_attributes again? */
+        devvp->v_specsize = blksize;
+        /* Note: relative block count adjustment */
+        hfsmp->hfs_phys_block_count *= hfsmp->hfs_phys_block_size / blksize;
+        hfsmp->hfs_phys_block_size = blksize;
+#else  /* !DARWIN */
+        printf(
+            "HFS Mount: embedded volume offset not"
+            " a multiple of physical block size\n");
+        retval = EINVAL;
+        goto error_exit;
+#endif /* DARWIN */
+      }
+
+      disksize = (u_int64_t)SWAP_BE16(mdbp->drEmbedExtent.blockCount) *
+                 (u_int64_t)SWAP_BE32(mdbp->drAlBlkSiz);
+
+      hfsmp->hfs_phys_block_count = disksize / blksize;
+
+      mdb_offset = (embeddedOffset / blksize) + HFS_PRI_SECTOR(blksize);
+      retval = meta_bread(devvp, mdb_offset, blksize, cred, &bp);
+      if (retval)
+        goto error_exit;
+      bcopy(bp->b_data + HFS_PRI_OFFSET(blksize), mdbp, 512);
+      brelse(bp);
+      bp = NULL;
+      vhp = (HFSPlusVolumeHeader*)mdbp;
+
+    } else /* pure HFS+ */ {
+      embeddedOffset = 0;
+      vhp = (HFSPlusVolumeHeader*)mdbp;
     }
 
-    printf("setting vpp to nvp\n");
-    
-    *vpp = nvp;
+#ifdef DARWIN_JOURNAL
+    // XXXdbg
+    //
+    hfsmp->jnl = NULL;
+    hfsmp->jvp = NULL;
+    if (args != NULL && (args->flags & HFSFSMNT_EXTENDED_ARGS) &&
+        args->journal_disable) {
+      jnl_disable = 1;
+    }
+#endif
 
-    printf("---");
+#ifdef DARWIN_JOURNAL
+    //
+    // We only initialize the journal here if the last person
+    // to mount this volume was journaling aware.  Otherwise
+    // we delay journal initialization until later at the end
+    // of hfs_MountHFSPlusVolume() because the last person who
+    // mounted it could have messed things up behind our back
+    // (so we need to go find the .journal file, make sure it's
+    // the right size, re-sync up if it was moved, etc).
+    //
+    if ((SWAP_BE32(vhp->lastMountedVersion) == kHFSJMountVersion) &&
+        (SWAP_BE32(vhp->attributes) & kHFSVolumeJournaledMask) &&
+        !jnl_disable) {
+      // if we're able to init the journal, mark the mount
+      // point as journaled.
+      //
+      if (hfs_early_journal_init(hfsmp, vhp, args, embeddedOffset, mdb_offset,
+                                 mdbp, cred) == 0) {
+        mp->mnt_flag |= MNT_JOURNALED;
+      } else {
+        retval = EINVAL;
+        goto error_exit;
+      }
+    }
+    // XXXdbg
+#endif /* DARWIN_JOURNAL */
 
-    return (0);
+    (void)hfs_getconverter(0, &hfsmp->hfs_get_unicode, &hfsmp->hfs_get_hfsname);
+
+    retval =
+        hfs_MountHFSPlusVolume(hfsmp, vhp, embeddedOffset, disksize, p, args);
+#ifdef DARWIN
+    /*
+     * If the backend didn't like our physical blocksize
+     * then retry with physical blocksize of 512.
+     */
+    if ((retval == ENXIO) && (blksize > 512) && (blksize != minblksize)) {
+      printf(
+          "HFS Mount: could not use physical block size "
+          "(%d) switching to 512\n",
+          blksize);
+      blksize = 512;
+      if (VOP_IOCTL(devvp, DKIOCSETBLOCKSIZE, (caddr_t)&blksize, FWRITE, cred,
+                    p)) {
+        retval = ENXIO;
+        goto error_exit;
+      }
+      if (VOP_IOCTL(devvp, DKIOCGETBLOCKCOUNT, (caddr_t)&blkcnt, 0, cred, p)) {
+        retval = ENXIO;
+        goto error_exit;
+      }
+      devvp->v_specsize = blksize;
+      /* Note: relative block count adjustment (in case this is an embedded
+       * volume). */
+      hfsmp->hfs_phys_block_count *= hfsmp->hfs_phys_block_size / blksize;
+      hfsmp->hfs_phys_block_size = blksize;
+
+      /* Try again with a smaller block size... */
+      retval =
+          hfs_MountHFSPlusVolume(hfsmp, vhp, embeddedOffset, disksize, p, args);
+    }
+#endif /* DARWIN */
+    if (retval)
+      (void)hfs_relconverter(0);
+  }
+
+  if (retval) {
+    goto error_exit;
+  }
+
+#ifdef DARWIN
+  mp->mnt_stat.f_fsid.val[0] = (long)dev;
+  mp->mnt_stat.f_fsid.val[1] = mp->mnt_vfc->vfc_typenum;
+  mp->mnt_maxsymlinklen = 0;
+  devvp->v_specflags |= SI_MOUNTEDON;
+#else
+  vfs_getnewfsid(mp);
+  mp->mnt_flag |= MNT_LOCAL;
+  devvp->v_rdev->si_mountpt = mp; /* used by vfs_mountedon() */
+#endif
+
+  if (ronly == 0) {
+    (void)hfs_flushvolumeheader(hfsmp, MNT_WAIT, 0);
+  }
+  free(mdbp, M_TEMP);
+  return (0);
+
+error_exit:
+  if (bp)
+    brelse(bp);
+  if (mdbp)
+    free(mdbp, M_TEMP);
+  (void)VOP_CLOSE(devvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
+#ifdef DARWIN_JOURNAL
+  if (hfsmp && hfsmp->jvp && hfsmp->jvp != hfsmp->hfs_devvp) {
+    (void)VOP_CLOSE(hfsmp->jvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
+    hfsmp->jvp = NULL;
+  }
+#endif
+  if (hfsmp) {
+    mtx_destroy(&hfsmp->hfs_renamelock);
+    free(hfsmp, M_HFSMNT);
+    mp->mnt_data = (qaddr_t)0;
+  }
+  return (retval);
 }
 
-static int hfs_statfs(struct mount *mp, struct statfs *sbp) {
-    printf("---hfs_statfs---\n");
-    sbp->f_bsize = 4096;
-    sbp->f_blocks = 1000;
-    sbp->f_bfree = 500;
-    sbp->f_bavail = 500;
-    sbp->f_files = 100;
-    sbp->f_ffree = 50;
+static int hfs_mount(struct mount* mp) {
+  printf("[ENTER] ---hfs_mount---\n");
 
-    return (0);
+  // struct hfsmount *hfsmp = NULL;
+  struct vnode* devvp;  // , *rootvp;
+  // struct hfs_mount_args args;
+  struct nameidata ndp;
+  // size_t size;
+  int error;  //, flags;
+  int retval = 0;
+  char* fspec;
+  int len;
+  // mode_t accessmode;
+
+  fspec = NULL;
+
+  error = vfs_getopt(mp->mnt_optnew, "from", (void**)&fspec, &len);
+  printf("fspec: %s | error: %d | len: %d\n", fspec, error, len);
+
+  if (error)
+    return (error);
+
+  // Check for updates here
+  if (mp->mnt_flag & MNT_UPDATE) {
+  }
+
+  NDINIT(&ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, fspec);
+  retval = namei(&ndp);
+  if (retval != 0) {
+    printf("hfs_mount: Can't get device. Error: %d\n", retval);
+    return (retval);
+  }
+
+  printf("Defining devvp\n");
+  devvp = ndp.ni_vp;
+
+  printf("NDFREE\n");
+  NDFREE_PNBUF(&ndp);
+
+  printf("Checking vn_isdisk. %d\n", error);
+  if (!vn_isdisk_error(devvp, &error)) {
+    printf("Calling vrele(devvp). vn_isdisk_error exited with: %d\n", error);
+    vrele(devvp);
+    return (retval);
+  }
+
+  printf("Calling mountfs\n");
+  retval = hfs_mountfs(devvp, mp);
+  if (retval)
+    return (retval);
+
+  printf("[Exit] ---hfs_mount---\n");
+  return (0);
 }
 
-static int hfs_sync(struct mount *mp, int waitfor) {
-    printf("---hfs_sync---\n");
+static int hfs_root(struct mount* mp, int flags, struct vnode** vpp) {
+  printf("---hfs_root---\n");
 
-    return (0);
+  struct vnode* nvp;
+  int retval;
+
+  if ((retval = VFS_VGET(mp, 4, LK_EXCLUSIVE, &nvp))) {
+    printf("VFS_VGET failed: %d\n", retval);
+    return (retval);
+  }
+
+  printf("setting vpp to nvp\n");
+
+  *vpp = nvp;
+
+  printf("---");
+
+  return (0);
 }
 
-static int hfs_unmount(struct mount *mp, int mntflags) {
-    printf("---hfs_unmount---\n");
+static int hfs_statfs(struct mount* mp, struct statfs* sbp) {
+  printf("---hfs_statfs---\n");
+  sbp->f_bsize = 4096;
+  sbp->f_blocks = 1000;
+  sbp->f_bfree = 500;
+  sbp->f_bavail = 500;
+  sbp->f_files = 100;
+  sbp->f_ffree = 50;
 
-    free(mp->mnt_data, M_HFSMNT);
-    mp->mnt_data = NULL;
-
-    return (0);
+  return (0);
 }
 
-static int hfs_vget(struct mount *mp, ino_t inode, int flags, struct vnode **vpp) {
-    printf("---hfs_vget---\n");
-    return 45;
+static int hfs_sync(struct mount* mp, int waitfor) {
+  printf("---hfs_sync---\n");
+
+  return (0);
+}
+
+static int hfs_unmount(struct mount* mp, int mntflags) {
+  printf("---hfs_unmount---\n");
+
+  free(mp->mnt_data, M_HFSMNT);
+  mp->mnt_data = NULL;
+
+  return (0);
+}
+
+static int hfs_vget(struct mount* mp,
+                    ino_t ino,
+                    int flags,
+                    struct vnode** vpp) {
+  cnid_t cnid = ino;
+
+  /* Check for cnids that should't be exported. */
+  if ((cnid < kHFSFirstUserCatalogNodeID) &&
+      (cnid != kHFSRootFolderID && cnid != kHFSRootParentID))
+    return (ENOENT);
+  /* Don't export HFS Private Data dir. */
+  if (cnid == VFSTOHFS(mp)->hfs_privdir_desc.cd_cnid)
+    return (ENOENT);
+
+  /* YYY flags should be passed down to vget() */
+  if (flags != LK_EXCLUSIVE)
+    printf("hfs_vget: incompatible lock flags (%#x)\n", flags);
+
+  return (hfs_getcnode(VFSTOHFS(mp), cnid, NULL, 0, NULL, NULL, vpp));
 }
 
 static struct vfsops hfs_vfsops = {
-	.vfs_mount =		hfs_mount,
-    
-    .vfs_root  =    hfs_root, 
-    .vfs_statfs = hfs_statfs, 
-    .vfs_sync = hfs_sync, 
-    .vfs_unmount = hfs_unmount, 
+    .vfs_mount = hfs_mount,
+
+    .vfs_root = hfs_root,
+    .vfs_statfs = hfs_statfs,
+    .vfs_sync = hfs_sync,
+    .vfs_unmount = hfs_unmount,
     .vfs_vget = hfs_vget,
 };
 

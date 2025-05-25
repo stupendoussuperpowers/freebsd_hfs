@@ -1,0 +1,1 @@
+extern struct vop_vector hfs_vnodeops;

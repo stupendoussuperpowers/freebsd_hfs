@@ -5,10 +5,17 @@ OBJDIR= /usr/obj/
 KMOD= hfs 
 SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_vnops.c \
+	hfsplus/hfs_cnode.c \
+	hfsplus/hfs_chash.c \
+	hfsplus/hfs_encodings.c \
+	hfsplus/hfs_vfsutils.c \
+	hfsplus/hfscommon/Misc/FileExtentMapping.c \
+	hfsplus/hfs_btreeio.c \
 
 SRCS+= vnode_if.h
 
 SYSDIR?= /usr/src
 
-.include <bsd.subdir.mk>
+CFLAGS+= -I${.CURDIR} -DKERNEL
+
 .include <bsd.kmod.mk>

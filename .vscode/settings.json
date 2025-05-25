@@ -1,6 +1,7 @@
 {
   "files.associations": {
     "vnode.h": "c",
-    "mount.h": "c"
+    "mount.h": "c",
+    "__locale": "c"
   }
 }
