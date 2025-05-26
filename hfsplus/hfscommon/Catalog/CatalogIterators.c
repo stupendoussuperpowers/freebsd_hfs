@@ -88,13 +88,13 @@ static void PrepareForLongName( CatalogIterator *iterator );
 
   #define CATALOG_ITER_LIST_UNLOCK(g)	mtx_unlock(&(g)->simplelock)
 
-  #define CI_LOCK(i)					lockmgr(&(i)->iterator_lock, LK_EXCLUSIVE, NULL, current_proc())
+  #define CI_LOCK(i)					lockmgr(&(i)->iterator_lock, LK_EXCLUSIVE, NULL)
 	
-#define CI_UNLOCK(i)					lockmgr(&(i)->iterator_lock, LK_RELEASE, NULL, current_proc())
+#define CI_UNLOCK(i)					lockmgr(&(i)->iterator_lock, LK_RELEASE, NULL)
 
-#define CI_SLEEPLESS_LOCK(i)			lockmgr(&(i)->iterator_lock, LK_EXCLUSIVE | LK_NOWAIT, NULL, current_proc())	
+#define CI_SLEEPLESS_LOCK(i)			lockmgr(&(i)->iterator_lock, LK_EXCLUSIVE | LK_NOWAIT, NULL)	
 
-#define CI_LOCK_FROM_LIST(g,i)		lockmgr(&(i)->iterator_lock, LK_EXCLUSIVE | LK_INTERLOCK, &(g)->simplelock, current_proc())
+#define CI_LOCK_FROM_LIST(g,i)		lockmgr(&(i)->iterator_lock, LK_EXCLUSIVE | LK_INTERLOCK, &(g)->simplelock)
 
 #else /* TARGET_API_MACOS_X */
 
@@ -129,7 +129,7 @@ InitCatalogCache(void)
 	UInt32					cacheSize;
 	UInt16					i;
 	UInt16					lastIterator;
-	OSErr					err;
+	// OSErr					err;
 
 
 	cacheSize = sizeof(CatalogCacheGlobals) + ( kCatalogIteratorCount * sizeof(CatalogIterator) );
@@ -233,7 +233,7 @@ PrintCatalogIterator( void )
 	int					i;
 
     PRINTIT("CatalogCacheGlobals @ 0x%08lX are:\n", (unsigned long)cacheGlobals);
-    PRINTIT("\titeratorCount: %ld \n", cacheGlobals->iteratorCount);
+    PRINTIT("\titeratorCount: %u \n", cacheGlobals->iteratorCount);
     PRINTIT("\tmru: 0x%08lX \n", (unsigned long)cacheGlobals->mru);
     PRINTIT("\tlru: 0x%08lX \n", (unsigned long)cacheGlobals->lru);
 
@@ -394,7 +394,7 @@ GetCatalogIterator(ExtendedVCB *volume, HFSCatalogNodeID folderID, UInt32 offset
 
 		bestIterator->volume = volume;			// update the iterator's volume
 		bestIterator->folderID = folderID;			// ... and folderID
-		bestIterator->currentIndex = 0xFFFFFFFF;			// ... and offspring index marker
+		bestIterator->currentIndex = 0xFFFF; // FFFF;			// ... and offspring index marker
 		bestIterator->currentOffset = 0xFFFFFFFF;
 		bestIterator->nextOffset = 0xFFFFFFFF;
 		
@@ -433,7 +433,7 @@ GetCatalogIterator(ExtendedVCB *volume, HFSCatalogNodeID folderID, UInt32 offset
 void
 UpdateBtreeIterator(const CatalogIterator *catalogIterator, BTreeIterator *btreeIterator)
 {
-	CatalogName *	nodeName;
+	const CatalogName *	nodeName;
 	Boolean			isHFSPlus;
 
 
@@ -445,7 +445,7 @@ UpdateBtreeIterator(const CatalogIterator *catalogIterator, BTreeIterator *btree
 	{
 		case kShortPascalName:
 			if ( catalogIterator->folderName.pascalName[0] > 0 )
-				nodeName  = (CatalogName *) catalogIterator->folderName.pascalName;
+				nodeName  = (const CatalogName *) catalogIterator->folderName.pascalName;
 			else
 				nodeName = NULL;
 
@@ -454,7 +454,7 @@ UpdateBtreeIterator(const CatalogIterator *catalogIterator, BTreeIterator *btree
 
 		case kShortUnicodeName:
 			if ( catalogIterator->folderName.unicodeName.length > 0 )
-				nodeName  = (CatalogName *) &catalogIterator->folderName.unicodeName;
+				nodeName  = (const CatalogName *) &catalogIterator->folderName.unicodeName;
 			else
 				nodeName = NULL;
 
@@ -463,7 +463,7 @@ UpdateBtreeIterator(const CatalogIterator *catalogIterator, BTreeIterator *btree
 
 		case kLongUnicodeName:
 			if ( catalogIterator->folderName.longNamePtr->length > 0 )
-				nodeName  = (CatalogName *) catalogIterator->folderName.longNamePtr;
+				nodeName  = (const CatalogName *) catalogIterator->folderName.longNamePtr;
 			else
 				nodeName = NULL;
 
@@ -489,16 +489,16 @@ UpdateBtreeIterator(const CatalogIterator *catalogIterator, BTreeIterator *btree
 void
 UpdateCatalogIterator (const BTreeIterator *btreeIterator, CatalogIterator *catalogIterator)
 {
-	void *			srcName;
+	const void *			srcName;
 	void *			dstName;
 	UInt16			nameSize;
-	CatalogKey *	catalogKey;
+	const CatalogKey *	catalogKey;
 
 
 	catalogIterator->btreeNodeHint  = btreeIterator->hint.nodeNum;
 	catalogIterator->btreeIndexHint = btreeIterator->hint.index;
 
-	catalogKey = (CatalogKey*) &btreeIterator->key;
+	catalogKey = (const CatalogKey*) &btreeIterator->key;
 
 	switch (catalogIterator->nameType)
 	{
@@ -626,7 +626,7 @@ PrepareForLongName ( CatalogIterator *iterator )
 	CatalogIterator		*iter;
 	
 	if (DEBUG_BUILD && iterator->nameType != kShortUnicodeName)
-		DebugStr("\p PrepareForLongName: nameType is wrong!");
+		DebugStr("PrepareForLongName: nameType is wrong!");
 	
 	//
 	//	Walk through all the iterators.  The first iterator whose nameType

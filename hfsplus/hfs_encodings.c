@@ -54,12 +54,12 @@ extern struct host realhost;
 
 #define MAX_HFS_UNICODE_CHARS (15 * 5)
 
-int mac_roman_to_unicode(Str31 hfs_str,
+int mac_roman_to_unicode(const Str31 hfs_str,
                          UniChar* uni_str,
                          UInt32 maxCharLen,
                          UInt32* usedCharLen);
 
-static int unicode_to_mac_roman(UniChar* uni_str,
+static int unicode_to_mac_roman(const UniChar* uni_str,
                                 UInt32 unicodeChars,
                                 Str31 hfs_str);
 
@@ -226,7 +226,7 @@ int hfs_relconverter(UInt32 encoding) {
  * '/' chars are converted to ':'
  */
 int hfs_to_utf8(ExtendedVCB* vcb,
-                Str31 hfs_str,
+                const Str31 hfs_str,
                 ByteCount maxDstLen,
                 ByteCount* actualDstLen,
                 unsigned char* dstStr) {
@@ -258,7 +258,7 @@ int hfs_to_utf8(ExtendedVCB* vcb,
  * When an HFS name cannot be encoded with the current
  * volume encoding then MacRoman is used as a fallback.
  */
-int mac_roman_to_utf8(Str31 hfs_str,
+int mac_roman_to_utf8(const Str31 hfs_str,
                       ByteCount maxDstLen,
                       ByteCount* actualDstLen,
                       unsigned char* dstStr) {
@@ -826,7 +826,7 @@ static UInt8 gReverseCombTable[] = {
  *
  * Assumes Unicode input is fully decomposed
  */
-static int unicode_to_mac_roman(UniChar* uni_str,
+static int unicode_to_mac_roman(const UniChar* uni_str,
                                 UInt32 unicodeChars,
                                 Str31 hfs_str) {
   UInt8* p;
@@ -1242,7 +1242,7 @@ static UniChar gHiBitCombUnicode[128] = {
  *
  * Unicode output is fully decomposed
  */
-int mac_roman_to_unicode(Str31 hfs_str,
+int mac_roman_to_unicode(const Str31 hfs_str,
                          UniChar* uni_str,
                          UInt32 maxCharLen,
                          UInt32* unicodeChars) {

@@ -16,6 +16,8 @@ __private_extern__ and static functions need annotations fixed.
 
 function definitions for vfs_ops functions, (e.g. hfs_mount(struct mount*) )
 
+Inconsistent use of 'const' in various hfs_encoding functions.
+
 --- 
 TODO:
 

@@ -295,7 +295,7 @@ typedef struct hfsmount {
 typedef struct filefork FCB;
 
 #define MAKE_INODE_NAME(name, linkno) \
-  (void)sprintf((name), "%s%d", HFS_INODE_PREFIX, (linkno))
+  (void)sprintf((name), "%s%lu", HFS_INODE_PREFIX, (linkno))
 
 /*
  *	Write check macro
@@ -509,7 +509,7 @@ int hfs_getconverter(u_int32_t encoding,
 int hfs_relconverter(u_int32_t encoding);
 
 int hfs_to_utf8(ExtendedVCB* vcb,
-                Str31 hfs_str,
+                const Str31 hfs_str,
                 ByteCount maxDstLen,
                 ByteCount* actualDstLen,
                 unsigned char* dstStr);
@@ -519,7 +519,7 @@ int utf8_to_hfs(ExtendedVCB* vcb,
                 const unsigned char* srcStr,
                 Str31 dstStr);
 
-int mac_roman_to_utf8(Str31 hfs_str,
+int mac_roman_to_utf8(const Str31 hfs_str,
                       ByteCount maxDstLen,
                       ByteCount* actualDstLen,
                       unsigned char* dstStr);

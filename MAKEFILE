@@ -7,11 +7,14 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_vnops.c \
 	hfsplus/hfs_cnode.c \
 	hfsplus/hfs_chash.c \
+	hfsplus/hfs_catalog.c \
 	hfsplus/hfs_encodings.c \
 	hfsplus/hfs_vfsutils.c \
+	hfsplus/hfs_endian.c \
 	hfsplus/hfscommon/Misc/FileExtentMapping.c \
 	hfsplus/hfs_btreeio.c \
 	hfsplus/hfscommon/Catalog/Catalog.c \
+	hfsplus/hfscommon/Catalog/CatalogIterators.c \
 	hfsplus/hfs_readwrite.c \
 	hfsplus/hfs_macos_stubs.c \
 	vfs/vfs_utfconv.c \
