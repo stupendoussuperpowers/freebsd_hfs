@@ -179,12 +179,7 @@ Result:		noErr				- success
 			!= noErr			- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	BTOpenPath			(FCB					*filePtr,
-								 KeyCompareProcPtr		 keyCompareProc,
-								 GetBlockProcPtr		 getBlockProc,
-								 ReleaseBlockProcPtr	 releaseBlockProc,
-								 SetEndOfForkProcPtr	 setEndOfForkProc,
-								 SetBlockSizeProcPtr	 setBlockSizeProc )
+OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcPtr getBlockProc, ReleaseBlockProcPtr releaseBlockProc, SetEndOfForkProcPtr setEndOfForkProc, SetBlockSizeProcPtr setBlockSizeProc) 
 {
 	OSStatus				err;
 	BTreeControlBlockPtr	btreePtr;
@@ -215,7 +210,7 @@ OSStatus	BTOpenPath			(FCB					*filePtr,
 	btreePtr = (BTreeControlBlock*) NewPtrSysClear( sizeof( BTreeControlBlock ) );
 	if (btreePtr == nil)
 	{
-		Panic ("\pBTOpen: no memory for btreePtr.");
+		Panic ("BTOpen: no memory for btreePtr.");
 		return	memFullErr;
 	}
 
@@ -249,7 +244,7 @@ OSStatus	BTOpenPath			(FCB					*filePtr,
 	{
 		nodeRec.buffer = nil;
 		nodeRec.blockHeader	= nil;
-		Panic("\pBTOpen: getNodeProc returned error getting header node.");
+		Panic("BTOpen: getNodeProc returned error getting header node.");
 		goto ErrorExit;
 	}
 	++btreePtr->numGetNodes;
@@ -264,7 +259,7 @@ OSStatus	BTOpenPath			(FCB					*filePtr,
 
 	///////////////////// Initalize fields from header //////////////////////////
 	
-    PanicIf ( (FCBTOVCB(filePtr)->vcbSigWord != 0x4244) && (header->nodeSize == 512), "\p BTOpenPath: wrong node size for HFS+ volume!");	// 0x4244 = 'BD'
+    PanicIf ( (FCBTOVCB(filePtr)->vcbSigWord != 0x4244) && (header->nodeSize == 512), "earTOpenPath: wrong node size for HFS+ volume!");	// 0x4244 = 'BD'
 
 	btreePtr->treeDepth			= header->treeDepth;
 	btreePtr->rootNode			= header->rootNode;
@@ -1734,8 +1729,7 @@ OSStatus	BTGetInformation	(FCB					*filePtr,
 
 // XXXdbg
 __private_extern__
-OSStatus
-BTIsDirty(FCB *filePtr)
+static OSStatus BTIsDirty(FCB *filePtr)
 {
 	BTreeControlBlockPtr	btreePtr;
 
@@ -1917,21 +1911,20 @@ Result:		noErr			- success
 -------------------------------------------------------------------------------*/
 
 
-OSStatus	BTSetLastSync		(FCB					*filePtr,
-								 UInt32					lastsync)
+OSStatus BTSetLastSync(FCB *filePtr, UInt32 lastsync)
 {
 	BTreeControlBlockPtr	btreePtr;
 
 
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
+	M_ReturnErrorIf(filePtr == nil, paramErr);
 
 	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
 	
 	/* Maybe instead of requiring a lock..an atomic set might be more appropriate */
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
-	M_ReturnErrorIf (btreePtr == nil,	fsBTInvalidFileErr);
-	M_ReturnErrorIf (lastsync == nil,	paramErr);
+	M_ReturnErrorIf(btreePtr == NULL, fsBTInvalidFileErr);
+	M_ReturnErrorIf(lastsync, paramErr);
 
 	btreePtr->lastfsync = lastsync;
 
@@ -1982,10 +1975,10 @@ OSStatus	BTCheckFreeSpace		(FCB					*filePtr)
 
 
 __private_extern__
-OSStatus	BTHasContiguousNodes	(FCB	 				*filePtr)
+OSStatus BTHasContiguousNodes(FCB *filePtr)
 {
 	BTreeControlBlockPtr	btreePtr;
-	int 					nodesNeeded, err = noErr;
+	// int nodesNeeded, err = noErr;
 
 
 	M_ReturnErrorIf (filePtr == nil, 	paramErr);

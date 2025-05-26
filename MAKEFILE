@@ -11,6 +11,12 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_vfsutils.c \
 	hfsplus/hfscommon/Misc/FileExtentMapping.c \
 	hfsplus/hfs_btreeio.c \
+	hfsplus/hfscommon/Catalog/Catalog.c \
+	hfsplus/hfs_readwrite.c \
+	hfsplus/hfs_macos_stubs.c \
+	vfs/vfs_utfconv.c \
+	hfsplus/hfscommon/BTree/BTree.c \
+	hfsplus/hfscommon/BTree/BTreeMiscOps.c \
 
 SRCS+= vnode_if.h
 

@@ -602,6 +602,369 @@ static int hfs_vget(struct mount* mp,
   return (hfs_getcnode(VFSTOHFS(mp), cnid, NULL, 0, NULL, NULL, vpp));
 }
 
+static int hfs_flushMDB(struct hfsmount* hfsmp, int waitfor, int altflush) {
+  ExtendedVCB* vcb = HFSTOVCB(hfsmp);
+  struct filefork* fp;
+  HFSMasterDirectoryBlock* mdb;
+  struct buf* bp = NULL;
+  int retval;
+  int sectorsize;
+  ByteCount namelen;
+
+  sectorsize = hfsmp->hfs_phys_block_size;
+  retval = bread(hfsmp->hfs_devvp, HFS_PRI_SECTOR(sectorsize), sectorsize,
+                 NOCRED, &bp);
+  if (retval) {
+    if (bp)
+      brelse(bp);
+    return retval;
+  }
+
+  // DBG_ASSERT(bp != NULL);
+  // DBG_ASSERT(bp->b_data != NULL);
+  // DBG_ASSERT(bp->b_bcount == sectorsize);
+
+#ifdef DARWIN_JOURNAL
+  if (hfsmp->jnl) {
+    panic("hfs: standard hfs volumes should not be journaled!\n");
+  }
+#endif
+
+  mdb = (HFSMasterDirectoryBlock*)(bp->b_data + HFS_PRI_OFFSET(sectorsize));
+
+  mdb->drCrDate = SWAP_BE32(UTCToLocal(to_hfs_time(vcb->vcbCrDate)));
+  mdb->drLsMod = SWAP_BE32(UTCToLocal(to_hfs_time(vcb->vcbLsMod)));
+  mdb->drAtrb = SWAP_BE16(vcb->vcbAtrb);
+  mdb->drNmFls = SWAP_BE16(vcb->vcbNmFls);
+  mdb->drAllocPtr = SWAP_BE16(vcb->nextAllocation);
+  mdb->drClpSiz = SWAP_BE32(vcb->vcbClpSiz);
+  mdb->drNxtCNID = SWAP_BE32(vcb->vcbNxtCNID);
+  mdb->drFreeBks = SWAP_BE16(vcb->freeBlocks);
+
+  namelen = strlen(vcb->vcbVN);
+  retval = utf8_to_hfs(vcb, namelen, vcb->vcbVN, mdb->drVN);
+  /* Retry with MacRoman in case that's how it was exported. */
+  if (retval)
+    retval = utf8_to_mac_roman(namelen, vcb->vcbVN, mdb->drVN);
+
+  mdb->drVolBkUp = SWAP_BE32(UTCToLocal(to_hfs_time(vcb->vcbVolBkUp)));
+  mdb->drWrCnt = SWAP_BE32(vcb->vcbWrCnt);
+  mdb->drNmRtDirs = SWAP_BE16(vcb->vcbNmRtDirs);
+  mdb->drFilCnt = SWAP_BE32(vcb->vcbFilCnt);
+  mdb->drDirCnt = SWAP_BE32(vcb->vcbDirCnt);
+
+  bcopy(vcb->vcbFndrInfo, mdb->drFndrInfo, sizeof(mdb->drFndrInfo));
+
+  fp = VTOF(vcb->extentsRefNum);
+  mdb->drXTExtRec[0].startBlock = SWAP_BE16(fp->ff_extents[0].startBlock);
+  mdb->drXTExtRec[0].blockCount = SWAP_BE16(fp->ff_extents[0].blockCount);
+  mdb->drXTExtRec[1].startBlock = SWAP_BE16(fp->ff_extents[1].startBlock);
+  mdb->drXTExtRec[1].blockCount = SWAP_BE16(fp->ff_extents[1].blockCount);
+  mdb->drXTExtRec[2].startBlock = SWAP_BE16(fp->ff_extents[2].startBlock);
+  mdb->drXTExtRec[2].blockCount = SWAP_BE16(fp->ff_extents[2].blockCount);
+  mdb->drXTFlSize = SWAP_BE32(fp->ff_blocks * vcb->blockSize);
+  mdb->drXTClpSiz = SWAP_BE32(fp->ff_clumpsize);
+
+  fp = VTOF(vcb->catalogRefNum);
+  mdb->drCTExtRec[0].startBlock = SWAP_BE16(fp->ff_extents[0].startBlock);
+  mdb->drCTExtRec[0].blockCount = SWAP_BE16(fp->ff_extents[0].blockCount);
+  mdb->drCTExtRec[1].startBlock = SWAP_BE16(fp->ff_extents[1].startBlock);
+  mdb->drCTExtRec[1].blockCount = SWAP_BE16(fp->ff_extents[1].blockCount);
+  mdb->drCTExtRec[2].startBlock = SWAP_BE16(fp->ff_extents[2].startBlock);
+  mdb->drCTExtRec[2].blockCount = SWAP_BE16(fp->ff_extents[2].blockCount);
+  mdb->drCTFlSize = SWAP_BE32(fp->ff_blocks * vcb->blockSize);
+  mdb->drCTClpSiz = SWAP_BE32(fp->ff_clumpsize);
+
+  /* If requested, flush out the alternate MDB */
+  if (altflush) {
+    struct buf* alt_bp = NULL;
+    u_long altIDSector;
+
+    altIDSector = HFS_ALT_SECTOR(sectorsize, hfsmp->hfs_phys_block_count);
+
+    if (meta_bread(hfsmp->hfs_devvp, altIDSector, sectorsize, NOCRED,
+                   &alt_bp) == 0) {
+      bcopy(mdb, alt_bp->b_data + HFS_ALT_OFFSET(sectorsize), kMDBSize);
+
+      (void)VOP_BWRITE(alt_bp);
+    } else if (alt_bp)
+      brelse(alt_bp);
+  }
+
+  if (waitfor != MNT_WAIT)
+    bawrite(bp);
+  else
+    retval = VOP_BWRITE(bp);
+
+  MarkVCBClean(vcb);
+
+  return (retval);
+}
+
+int hfs_flushvolumeheader(struct hfsmount* hfsmp, int waitfor, int altflush) {
+  ExtendedVCB* vcb = HFSTOVCB(hfsmp);
+  struct filefork* fp;
+  HFSPlusVolumeHeader* volumeHeader;
+  int retval;
+  struct buf* bp;
+  int i;
+  int sectorsize;
+  int priIDSector;
+  // int critical = 0;
+
+  if (vcb->vcbSigWord == kHFSSigWord)
+    return hfs_flushMDB(hfsmp, waitfor, altflush);
+
+  // if (altflush)
+    // critical = 1;
+  sectorsize = hfsmp->hfs_phys_block_size;
+  priIDSector =
+      (vcb->hfsPlusIOPosOffset / sectorsize) + HFS_PRI_SECTOR(sectorsize);
+
+#ifdef DARWIN_JOURNAL
+  // XXXdbg
+  hfs_global_shared_lock_acquire(hfsmp);
+  if (hfsmp->jnl) {
+    if (journal_start_transaction(hfsmp->jnl) != 0) {
+      hfs_global_shared_lock_release(hfsmp);
+      return EINVAL;
+    }
+  }
+#endif
+
+  retval = meta_bread(hfsmp->hfs_devvp, priIDSector, sectorsize, NOCRED, &bp);
+  if (retval) {
+    if (bp)
+      brelse(bp);
+
+#ifdef DARWIN_JOURNAL
+    if (hfsmp->jnl) {
+      journal_end_transaction(hfsmp->jnl);
+    }
+    hfs_global_shared_lock_release(hfsmp);
+#endif
+
+    return (retval);
+  }
+
+#ifdef DARWIN_JOURNAL
+  if (hfsmp->jnl) {
+    journal_modify_block_start(hfsmp->jnl, bp);
+  }
+#endif
+
+  volumeHeader =
+      (HFSPlusVolumeHeader*)((char*)bp->b_data + HFS_PRI_OFFSET(sectorsize));
+
+  /*
+   * For embedded HFS+ volumes, update create date if it changed
+   * (ie from a setattrlist call)
+   */
+  if ((vcb->hfsPlusIOPosOffset != 0) &&
+      (SWAP_BE32(volumeHeader->createDate) != vcb->localCreateDate)) {
+    struct buf* bp2;
+    HFSMasterDirectoryBlock* mdb;
+
+    retval = meta_bread(hfsmp->hfs_devvp, HFS_PRI_SECTOR(sectorsize),
+                        sectorsize, NOCRED, &bp2);
+    if (retval) {
+      if (bp2)
+        brelse(bp2);
+      retval = 0;
+    } else {
+      mdb =
+          (HFSMasterDirectoryBlock*)(bp2->b_data + HFS_PRI_OFFSET(sectorsize));
+
+      if (SWAP_BE32(mdb->drCrDate) != vcb->localCreateDate) {
+#ifdef DARWIN_JOURNAL
+        // XXXdbg
+        if (hfsmp->jnl) {
+          journal_modify_block_start(hfsmp->jnl, bp2);
+        }
+#endif
+
+        mdb->drCrDate =
+            SWAP_BE32(vcb->localCreateDate); /* pick up the new create date */
+
+#ifdef DARWIN_JOURNAL
+        // XXXdbg
+        if (hfsmp->jnl) {
+          journal_modify_block_end(hfsmp->jnl, bp2);
+        } else
+#endif
+        {
+          (void)VOP_BWRITE(bp2); /* write out the changes */
+        }
+      } else {
+        brelse(bp2); /* just release it */
+      }
+    }
+  }
+
+// XXXdbg - only monkey around with the volume signature on non-root volumes
+//
+#if 0
+#ifdef DARWIN_JOURNAL
+	if (hfsmp->jnl &&
+		hfsmp->hfs_fs_ronly == 0 &&
+		(HFSTOVFS(hfsmp)->mnt_flag & MNT_ROOTFS) == 0) {
+		
+		int old_sig = volumeHeader->signature;
+
+		if (vcb->vcbAtrb & kHFSVolumeUnmountedMask) {
+			volumeHeader->signature = kHFSPlusSigWord;
+		} else {
+			volumeHeader->signature = kHFSJSigWord;
+		}
+
+		if (old_sig != volumeHeader->signature) {
+			altflush = 1;
+		}
+	}
+#endif
+#endif
+  // XXXdbg
+
+  /* Note: only update the lower 16 bits worth of attributes */
+  volumeHeader->attributes =
+      SWAP_BE32((SWAP_BE32(volumeHeader->attributes) & 0xFFFF0000) +
+                (UInt16)vcb->vcbAtrb);
+  volumeHeader->journalInfoBlock = SWAP_BE32(vcb->vcbJinfoBlock);
+#ifdef DARWIN_JOURNAL
+  if (hfsmp->jnl) {
+    volumeHeader->lastMountedVersion = SWAP_BE32(kHFSJMountVersion);
+  } else
+#endif
+  {
+    volumeHeader->lastMountedVersion = SWAP_BE32(kHFSPlusMountVersion);
+  }
+  volumeHeader->createDate =
+      SWAP_BE32(vcb->localCreateDate); /* volume create date is in local time */
+  volumeHeader->modifyDate = SWAP_BE32(to_hfs_time(vcb->vcbLsMod));
+  volumeHeader->backupDate = SWAP_BE32(to_hfs_time(vcb->vcbVolBkUp));
+  volumeHeader->fileCount = SWAP_BE32(vcb->vcbFilCnt);
+  volumeHeader->folderCount = SWAP_BE32(vcb->vcbDirCnt);
+  volumeHeader->freeBlocks = SWAP_BE32(vcb->freeBlocks);
+  volumeHeader->nextAllocation = SWAP_BE32(vcb->nextAllocation);
+  volumeHeader->rsrcClumpSize = SWAP_BE32(vcb->vcbClpSiz);
+  volumeHeader->dataClumpSize = SWAP_BE32(vcb->vcbClpSiz);
+  volumeHeader->nextCatalogID = SWAP_BE32(vcb->vcbNxtCNID);
+  volumeHeader->writeCount = SWAP_BE32(vcb->vcbWrCnt);
+  volumeHeader->encodingsBitmap = SWAP_BE64(vcb->encodingsBitmap);
+
+  if (bcmp(vcb->vcbFndrInfo, volumeHeader->finderInfo,
+           sizeof(volumeHeader->finderInfo)) != 0)
+   // critical = 1;
+  bcopy(vcb->vcbFndrInfo, volumeHeader->finderInfo,
+        sizeof(volumeHeader->finderInfo));
+
+  /* Sync Extents over-flow file meta data */
+  fp = VTOF(vcb->extentsRefNum);
+  for (i = 0; i < kHFSPlusExtentDensity; i++) {
+    volumeHeader->extentsFile.extents[i].startBlock =
+        SWAP_BE32(fp->ff_extents[i].startBlock);
+    volumeHeader->extentsFile.extents[i].blockCount =
+        SWAP_BE32(fp->ff_extents[i].blockCount);
+  }
+  FTOC(fp)->c_flag &= ~C_MODIFIED;
+  volumeHeader->extentsFile.logicalSize = SWAP_BE64(fp->ff_size);
+  volumeHeader->extentsFile.totalBlocks = SWAP_BE32(fp->ff_blocks);
+  volumeHeader->extentsFile.clumpSize = SWAP_BE32(fp->ff_clumpsize);
+
+  /* Sync Catalog file meta data */
+  fp = VTOF(vcb->catalogRefNum);
+  for (i = 0; i < kHFSPlusExtentDensity; i++) {
+    volumeHeader->catalogFile.extents[i].startBlock =
+        SWAP_BE32(fp->ff_extents[i].startBlock);
+    volumeHeader->catalogFile.extents[i].blockCount =
+        SWAP_BE32(fp->ff_extents[i].blockCount);
+  }
+  FTOC(fp)->c_flag &= ~C_MODIFIED;
+  volumeHeader->catalogFile.logicalSize = SWAP_BE64(fp->ff_size);
+  volumeHeader->catalogFile.totalBlocks = SWAP_BE32(fp->ff_blocks);
+  volumeHeader->catalogFile.clumpSize = SWAP_BE32(fp->ff_clumpsize);
+
+  /* Sync Allocation file meta data */
+  fp = VTOF(vcb->allocationsRefNum);
+  for (i = 0; i < kHFSPlusExtentDensity; i++) {
+    volumeHeader->allocationFile.extents[i].startBlock =
+        SWAP_BE32(fp->ff_extents[i].startBlock);
+    volumeHeader->allocationFile.extents[i].blockCount =
+        SWAP_BE32(fp->ff_extents[i].blockCount);
+  }
+  FTOC(fp)->c_flag &= ~C_MODIFIED;
+  volumeHeader->allocationFile.logicalSize = SWAP_BE64(fp->ff_size);
+  volumeHeader->allocationFile.totalBlocks = SWAP_BE32(fp->ff_blocks);
+  volumeHeader->allocationFile.clumpSize = SWAP_BE32(fp->ff_clumpsize);
+
+  /* If requested, flush out the alternate volume header */
+  if (altflush) {
+    struct buf* alt_bp = NULL;
+    u_long altIDSector;
+
+    altIDSector = (vcb->hfsPlusIOPosOffset / sectorsize) +
+                  HFS_ALT_SECTOR(sectorsize, hfsmp->hfs_phys_block_count);
+
+    if (meta_bread(hfsmp->hfs_devvp, altIDSector, sectorsize, NOCRED,
+                   &alt_bp) == 0) {
+#ifdef DARWIN_JOURNAL
+      if (hfsmp->jnl) {
+        journal_modify_block_start(hfsmp->jnl, alt_bp);
+      }
+#endif
+
+      bcopy(volumeHeader, alt_bp->b_data + HFS_ALT_OFFSET(sectorsize),
+            kMDBSize);
+
+#ifdef DARWIN_JOURNAL
+      if (hfsmp->jnl) {
+        journal_modify_block_end(hfsmp->jnl, alt_bp);
+      } else
+#endif
+      {
+        (void)VOP_BWRITE(alt_bp);
+      }
+    } else if (alt_bp)
+      brelse(alt_bp);
+  }
+
+#ifdef DARWIN_JOURNAL
+  // XXXdbg
+  if (hfsmp->jnl) {
+    journal_modify_block_end(hfsmp->jnl, bp);
+    journal_end_transaction(hfsmp->jnl);
+  } else
+#endif
+  {
+    if (waitfor != MNT_WAIT)
+      bawrite(bp);
+    else {
+      retval = VOP_BWRITE(bp);
+#ifdef DARWIN
+      /* When critical data changes, flush the device cache */
+      if (critical && (retval == 0)) {
+        (void)VOP_IOCTL(hfsmp->hfs_devvp, DKIOCSYNCHRONIZECACHE, NULL, FWRITE,
+                        NOCRED, current_proc());
+      }
+#endif
+    }
+  }
+#ifdef DARWIN_JOURNAL
+  hfs_global_shared_lock_release(hfsmp);
+#endif
+
+  vcb->vcbFlags &= 0x00FF;
+  return (retval);
+}
+
+
+
+//
+//  Should the above two function be in utils instead? I guess so?
+//  hfs_flushvolumeheaders
+//  hfs_flushMDB
+//
+
 static struct vfsops hfs_vfsops = {
     .vfs_mount = hfs_mount,
 

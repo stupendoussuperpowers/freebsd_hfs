@@ -499,5 +499,10 @@ OSStatus	DeleteTree				(BTreeControlBlockPtr	 btreePtr,
 									 UInt16					 level );
 
 #endif /* __APPLE_API_PRIVATE */
+OSStatus GetBTreeBlock(FileReference, UInt32, GetBlockOptions, BlockDescriptor*);
+OSStatus ReleaseBTreeBlock(FileReference, BlockDescPtr, ReleaseBlockOptions);
+OSStatus SetBTreeBlockSize(FileReference, ByteCount, ItemCount);
+OSStatus ExtendBTreeFile(FileReference, FSSize, FSSize);
+OSStatus TreeIsDirty(BTreeControlBlockPtr);
 #endif /* _KERNEL */
 #endif //__BTREESPRIVATE__

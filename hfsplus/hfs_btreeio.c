@@ -30,8 +30,8 @@
 #include <sys/mount.h>
 #include <sys/vnode.h>
 
-#include <hfsplus/hfs_macos_defs.h>
 #include <hfsplus/hfs.h>
+#include <hfsplus/hfs_macos_defs.h>
 #include <hfsplus/hfs_cnode.h>
 #include <hfsplus/hfs_dbg.h>
 #include <hfsplus/hfs_endian.h>
@@ -41,6 +41,7 @@
 
 #define FORCESYNCBTREEWRITES 0
 
+// OSStatus GetBTreeBlock(FileReference, UInt32, GetBlockOptions, BlockDescriptor);
 
 static int ClearBTNodes(struct vnode *vp, long blksize, off_t offset, off_t amount);
 
@@ -50,7 +51,7 @@ static struct buf_ops buf_ops_hfs_btree = {
 };
 
 __private_extern__
-static OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize, ItemCount minBlockCount)
+OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize, ItemCount minBlockCount)
 {
 	BTreeControlBlockPtr	bTreePtr;
 	
@@ -67,7 +68,7 @@ static OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize, ItemCou
 
 
 __private_extern__
-static OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum, GetBlockOptions options, BlockDescriptor *block)
+OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum, GetBlockOptions options, BlockDescriptor *block)
 {
     OSStatus	 retval = E_NONE;
     struct buf   *bp = NULL;
@@ -153,7 +154,7 @@ void ModifyBlockStart(FileReference vp, BlockDescPtr blockPtr)
 
 
 __private_extern__
-static OSStatus ReleaseBTreeBlock(FileReference vp, BlockDescPtr blockPtr, ReleaseBlockOptions options)
+OSStatus ReleaseBTreeBlock(FileReference vp, BlockDescPtr blockPtr, ReleaseBlockOptions options)
 {
 #ifdef DARWIN_JOURNAL
     struct hfsmount	*hfsmp = VTOHFS(vp);
@@ -279,7 +280,7 @@ exit:
 
 
 __private_extern__
-static OSStatus ExtendBTreeFile(FileReference vp, FSSize minEOF, FSSize maxEOF)
+OSStatus ExtendBTreeFile(FileReference vp, FSSize minEOF, FSSize maxEOF)
 {
 #pragma unused (maxEOF)
 

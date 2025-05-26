@@ -205,7 +205,8 @@ extern void		UpdateBtreeIterator( const CatalogIterator *catalogIterator, BTreeI
 
 extern void		UpdateCatalogIterator( const BTreeIterator *btreeIterator, CatalogIterator *catalogIterator );
 
-
 #endif /* __APPLE_API_PRIVATE */
+UInt32 GetDirEntrySize(BTreeIterator*, ExtendedVCB* );
+OSErr PositionIterator(CatalogIterator*, UInt32, BTreeIterator*, UInt16*);
 #endif /* _KERNEL */
 #endif //__CATALOGPRIVATE__
