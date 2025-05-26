@@ -11,6 +11,7 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_encodings.c \
 	hfsplus/hfs_vfsutils.c \
 	hfsplus/hfs_endian.c \
+	hfsplus/hfs_encodinghint.c \
 	hfsplus/hfscommon/Misc/FileExtentMapping.c \
 	hfsplus/hfs_btreeio.c \
 	hfsplus/hfscommon/Catalog/Catalog.c \
