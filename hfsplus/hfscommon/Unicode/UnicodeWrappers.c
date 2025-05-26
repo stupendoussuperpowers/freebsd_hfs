@@ -146,7 +146,7 @@ CountFilenameExtensionChars( const unsigned char * filename, UInt32 length )
 	UniChar	c;
 	UInt32	extChars;	/* number of extension chars (excluding dot) */
 	UInt16	maxExtChars;
-	Boolean	foundExtension;
+	// Boolean	foundExtension;
 
 	if ( length < 3 )
 		return 0;	/* "x.y" is smallest possible extension	*/
@@ -158,7 +158,7 @@ CountFilenameExtensionChars( const unsigned char * filename, UInt32 length )
 
 	extChars = 0;		/* assume there's no extension */
 	i = length - 1;		/* index to last ascii character */
-	foundExtension = false;
+	// foundExtension = false;
 
 	while ( extChars <= maxExtChars ) {
 		c = filename[i--];
@@ -273,9 +273,9 @@ SInt32	FastRelString( ConstStr255Param str1, ConstStr255Param str2 )
 	UInt16*			compareTable;
 	SInt32	 		bestGuess;
 	UInt8 	 		length, length2;
-	UInt8 	 		delta;
+	// UInt8 	 		delta;
 
-	delta = 0;
+	// delta = 0;
 	length = *(str1++);
 	length2 = *(str2++);
 
@@ -284,7 +284,7 @@ SInt32	FastRelString( ConstStr255Param str1, ConstStr255Param str2 )
 	else if (length < length2)
 	{
 		bestGuess = -1;
-		delta = length2 - length;
+		// delta = length2 - length;
 	}
 	else
 	{

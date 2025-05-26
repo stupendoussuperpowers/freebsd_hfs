@@ -292,7 +292,7 @@ int mac_roman_to_utf8(const Str31 hfs_str,
  * ':' chars are converted to '/'
  * Assumes input represents fully decomposed Unicode
  */
-static int unicode_to_hfs(ExtendedVCB* vcb,
+int unicode_to_hfs(ExtendedVCB* vcb,
                           ByteCount srcLen,
                           u_int16_t* srcStr,
                           Str31 dstStr,

@@ -89,8 +89,8 @@ static int cat_lookupmangled(struct hfsmount *hfsmp, struct cat_desc *descp, int
 extern int mac_roman_to_unicode(const Str31 hfs_str, UniChar *uni_str,
                                 UInt32 maxCharLen, UInt32 *unicodeChars);
 
-extern int unicode_to_hfs(ExtendedVCB *vcb, ByteCount srcLen,
-                          const u_int16_t* srcStr, Str31 dstStr, int retry);
+// extern int unicode_to_hfs(ExtendedVCB *vcb, ByteCount srcLen,
+//                           const u_int16_t* srcStr, Str31 dstStr, int retry);
 
 
 /* Internal catalog support routines */
