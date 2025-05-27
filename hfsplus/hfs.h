@@ -29,6 +29,20 @@
 
 #define KERNEL 1
 
+#define FREE free
+#define MALLOC5(var, type, size, pool, flags) \
+	(var) = (type) MALLOC((size), (pool), (flags))
+
+#define MOVE_PTR(vptr, type, n) \
+  (vptr) = ((type *)(vptr) + (n));
+
+#define MOVE_PTR_SET(vptr, type, n, val) \
+  do {                                   \
+    type *tptr = (type *)(vptr);         \
+    *tptr = (val);                       \
+    (vptr) = (void *)(tptr + (n));       \
+  } while (0)                            \
+  
 #ifdef _KERNEL
 #ifdef __APPLE_API_PRIVATE
 #include <sys/lock.h>
@@ -253,7 +267,7 @@ typedef struct hfsmount {
 #define hfs_private_metadata_dir hfs_privdir_desc.cd_cnid
 
 #ifdef DARWIN_JOURNAL
-#define hfs_global_shared_lock_acquire(hfsmp)                           \
+#define HFS_GLOCK_ACQUIRE(hfsmp)                           \
   do {                                                                  \
     if (hfsmp->blocker) {                                               \
       tsleep((caddr_t) & hfsmp->blocker, PRIBIO, "journal_blocker", 0); \
@@ -263,7 +277,7 @@ typedef struct hfsmount {
     break;                                                              \
   } while (1)
 
-#define hfs_global_shared_lock_release(hfsmp) \
+#define HFS_GLOCK_RELEASE(hfsmp) \
   do {                                        \
     hfsmp->readers--;                         \
     if (hfsmp->readers == 0) {                \
@@ -461,7 +475,6 @@ short MacToVFSError(OSErr err);
 extern int hfs_owner_rights(struct hfsmount* hfsmp,
                             uid_t cnode_uid,
                             struct ucred* cred,
-                            proc_t* p,
                             int invokesuperuserstatus);
 
 u_long FindMetaDataDirectory(ExtendedVCB* vcb);

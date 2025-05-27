@@ -22,6 +22,8 @@
 #ifndef _HFS_ATTRLIST_H_
 #define _HFS_ATTRLIST_H_
 
+#define VT_HFS 999
+
 #include <sys/appleapiopts.h>
 
 #ifdef _KERNEL
@@ -57,7 +59,7 @@ extern int hfs_attrblksize(struct attrlist *attrlist);
 
 extern unsigned long DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid,
 			mode_t obj_mode, struct mount *mp,
-			struct ucred *cred, struct proc *p);
+			struct ucred *cred);
 
 extern void hfs_packattrblk(struct attrblock *abp, struct hfsmount *hfsmp,
 		struct vnode *vp, struct cat_desc *descp, struct cat_attr *attrp,

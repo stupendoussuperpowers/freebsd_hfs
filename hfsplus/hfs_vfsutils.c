@@ -202,7 +202,6 @@ OSErr hfs_MountHFSVolume(struct hfsmount* hfsmp,
   /*
    * Set up Catalog B-tree vnode...
    */
-  cndesc.cd_nameptr = hfs_catname;
   cndesc.cd_namelen = strlen(hfs_catname);
   cndesc.cd_cnid = cnattr.ca_fileid = kHFSCatalogFileID;
   fork.cf_size = SWAP_BE32(mdb->drCTFlSize);
@@ -748,7 +747,7 @@ void RequireFileLock(FileReference vp, int shareable) {
 int hfs_owner_rights(struct hfsmount* hfsmp,
                      uid_t cnode_uid,
                      struct ucred* cred,
-                     proc_t* p,
+                     // proc_t* p,
                      int invokesuperuserstatus) {
   if ((cred->cr_uid == cnode_uid) || /* [1a] */
 #ifdef DARWIN

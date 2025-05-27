@@ -22,6 +22,7 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfscommon/BTree/BTree.c \
 	hfsplus/hfscommon/BTree/BTreeMiscOps.c \
 	hfsplus/hfscommon/Unicode/UnicodeWrappers.c \
+	hfsplus/hfs_attrlist.c \
 
 SRCS+= vnode_if.h
 

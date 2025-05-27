@@ -1235,7 +1235,7 @@ hfs_real_user_access(vnode_t vp, vfs_context_t ctx)
 
 u_int32_t
 DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid, mode_t obj_mode,
-		struct mount *mp, kauth_cred_t cred, __unused struct proc *p)
+		struct mount *mp, kauth_cred_t cred)
 {
 	u_int32_t permissions;
 

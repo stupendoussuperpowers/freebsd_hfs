@@ -18,6 +18,12 @@ function definitions for vfs_ops functions, (e.g. hfs_mount(struct mount*) )
 
 Inconsistent use of 'const' in various hfs_encoding functions.
 
+hfs_attrlist.c seems to be missing several headers, sys/attr.h is not a valid header anymore. 
+Lots of pointer arithmetic not allowed by clang. (Added MOVE_PTR, MOVE_PTR_SET to accomodate for these).
+Look at the mask checks which are currently commented out.
+
+<set/get>attr'list' functions seem to not be directly supported.
+
 --- 
 TODO:
 
