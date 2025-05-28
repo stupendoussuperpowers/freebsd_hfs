@@ -957,7 +957,29 @@ int hfs_flushvolumeheader(struct hfsmount* hfsmp, int waitfor, int altflush) {
   return (retval);
 }
 
+void hfs_setencodingbits(struct hfsmount* hfsmp, u_int32_t encoding) {
+#define kIndexMacUkrainian 48 /* MacUkrainian encoding is 152 */
+#define kIndexMacFarsi 49     /* MacFarsi encoding is 140 */
 
+  UInt32 index;
+
+  switch (encoding) {
+    case kTextEncodingMacUkrainian:
+      index = kIndexMacUkrainian;
+      break;
+    case kTextEncodingMacFarsi:
+      index = kIndexMacFarsi;
+      break;
+    default:
+      index = encoding;
+      break;
+  }
+
+  if (index < 128) {
+    HFSTOVCB(hfsmp)->encodingsBitmap |= (1 << index);
+    HFSTOVCB(hfsmp)->vcbFlags |= 0xFF00;
+  }
+}
 
 //
 //  Should the above two function be in utils instead? I guess so?

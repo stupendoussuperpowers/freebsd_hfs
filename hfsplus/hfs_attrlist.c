@@ -43,8 +43,9 @@
 #include <hfsplus/hfs_dbg.h>
 #include <hfsplus/hfs_attrlist.h>
 
-
+#ifdef DARWIN
 extern uid_t console_user;
+#endif
 
 /* Routines that are shared by hfs_setattr: */
 extern int hfs_write_access(struct vnode *vp, struct ucred *cred,
@@ -1130,7 +1131,7 @@ packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *v
 	if (ATTR_CMN_OWNERID & attr) {
 		if (cp->c_uid == UNKNOWNUID) {
 			//*((uid_t *)attrbufptr)++ = console_user;
-			MOVE_PTR_SET(attrbufptr, uid_t, 1, console_user);
+			// MOVE_PTR_SET(attrbufptr, uid_t, 1, console_user);
 		} else {
 			// *((uid_t *)attrbufptr)++ = cp->c_uid;
 			MOVE_PTR_SET(attrbufptr, uid_t, 1, cp->c_uid);
@@ -1470,7 +1471,8 @@ packcommonattr(
 	if (ATTR_CMN_OWNERID & attr) {
 		// *((uid_t *)attrbufptr)++ =
 		// 	(cap->ca_uid == UNKNOWNUID) ? console_user : cap->ca_uid;
-		MOVE_PTR_SET(attrbufptr, uid_t, 1, (cap->ca_uid == UNKNOWNUID) ? console_user : cap->ca_uid);
+		// MOVE_PTR_SET(attrbufptr, uid_t, 1, (cap->ca_uid == UNKNOWNUID) ? console_user : cap->ca_uid);
+		MOVE_PTR_SET(attrbufptr, uid_t, 1, cap->ca_uid);
 	}
 	if (ATTR_CMN_GRPID & attr) {
 		// *((gid_t *)attrbufptr)++ = cap->ca_gid;
@@ -1993,7 +1995,7 @@ DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid, mode_t obj_mode,
 	int i;
 
 	if (obj_uid == UNKNOWNUID)
-		obj_uid = console_user;
+		obj_uid = cred->cr_uid;// console_user;
 
 	/* User id 0 (root) always gets access. */
 	if (cred->cr_uid == 0) {
