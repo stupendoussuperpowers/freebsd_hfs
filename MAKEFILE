@@ -25,6 +25,7 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_macos_stubs.c \
 	vfs/vfs_utfconv.c \
 	hfsplus/hfscommon/BTree/BTree.c \
+	hfsplus/hfscommon/BTree/BTreeTreeOps.c \
 	hfsplus/hfscommon/BTree/BTreeMiscOps.c \
 	hfsplus/hfscommon/BTree/BTreeNodeOps.c \
 	hfsplus/hfscommon/Unicode/UnicodeWrappers.c \

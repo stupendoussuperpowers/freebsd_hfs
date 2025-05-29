@@ -283,7 +283,7 @@ typedef BTreeKeyPtr			 KeyPtr;
 
 #if DEBUG_BUILD
 	#define Panic( message )					DebugStr( (ConstStr255Param) message )
-	#define PanicIf( condition, message )		if ( condition != 0 )	DebugStr( message )
+	#define PanicIf( condition, message )		if ( (condition) != 0 )	DebugStr( message )
 #else
 	#define Panic( message )
 	#define PanicIf( condition, message )
@@ -505,4 +505,4 @@ OSStatus SetBTreeBlockSize(FileReference, ByteCount, ItemCount);
 OSStatus ExtendBTreeFile(FileReference, FSSize, FSSize);
 OSStatus TreeIsDirty(BTreeControlBlockPtr);
 #endif /* _KERNEL */
-#endif //__BTREESPRIVATE__
+#endif //__BTREESPRIVATE_
