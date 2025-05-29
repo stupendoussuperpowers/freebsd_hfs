@@ -199,7 +199,7 @@ OSStatus	GetNode		(BTreeControlBlockPtr	 btreePtr,
 	//€€ is nodeNum within proper range?
 	if( nodeNum >= btreePtr->totalNodes )
 	{
-		Panic("\pGetNode:nodeNum >= totalNodes");
+		Panic("GetNode:nodeNum >= totalNodes");
 		err = fsBTInvalidNodeErr;
 		goto ErrorExit;
 	}
@@ -214,7 +214,7 @@ OSStatus	GetNode		(BTreeControlBlockPtr	 btreePtr,
 
 	if (err != noErr)
 	{
-		Panic ("\pGetNode: getNodeProc returned error.");
+		Panic ("GetNode: getNodeProc returned error.");
 	//	nodePtr->buffer = nil;
 		goto ErrorExit;
 	}
@@ -260,7 +260,7 @@ OSStatus	GetNode		(BTreeControlBlockPtr	 btreePtr,
 					{
 						if( *cur++ != 0 )
 						{
-							Panic ("\pGetNode: CheckNode returned error.");
+							Panic ("GetNode: CheckNode returned error.");
 							break;
 						}
 					}
@@ -321,7 +321,7 @@ OSStatus	GetNewNode	(BTreeControlBlockPtr	 btreePtr,
 					   
 	if (err != noErr)
 	{
-		Panic ("\pGetNewNode: getNodeProc returned error.");
+		Panic ("GetNewNode: getNodeProc returned error.");
 	//	returnNodePtr->buffer = nil;
 		return err;
 	}
@@ -371,7 +371,7 @@ OSStatus	ReleaseNode	(BTreeControlBlockPtr	 btreePtr,
 		err = releaseNodeProc (btreePtr->fileRefNum,
 							   nodePtr,
 							   kReleaseBlock );
-		PanicIf (err, "\pReleaseNode: releaseNodeProc returned error.");
+		PanicIf (err, "ReleaseNode: releaseNodeProc returned error.");
 		++btreePtr->numReleaseNodes;
 	}
 
@@ -413,7 +413,7 @@ OSStatus	TrashNode	(BTreeControlBlockPtr	 btreePtr,
 		err = releaseNodeProc (btreePtr->fileRefNum,
 							   nodePtr,
 							   kReleaseBlock | kTrashBlock );
-		PanicIf (err, "\TrashNode: releaseNodeProc returned error.");
+		PanicIf (err, "TrashNode: releaseNodeProc returned error.");
 		++btreePtr->numReleaseNodes;
 	}
 
@@ -569,6 +569,7 @@ OSStatus	CheckNode	(BTreeControlBlockPtr	 btreePtr, NodeDescPtr	 node )
 #if HFS_DIAGNOSTIC
 static void PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber)
 {
+	/*	
 	struct row {
 		UInt16	word[8];
 	};
@@ -576,7 +577,7 @@ static void PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber
 	UInt16	rows;
 	UInt32	*lp;
 
-	PRINTIT("Dump of B-tree node #%ld ($%08lX)\n", nodeNumber, nodeNumber);
+	PRINTIT("Dump of B-tree node #%lu ($%08X)\n", nodeNumber, nodeNumber);
 
 	rows = nodeSize/16;
 	lp = (UInt32*) node;
@@ -584,6 +585,7 @@ static void PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber
 	
 	while (rows-- > 0)
 		PRINTIT("%04X: %08lX %08lX %08lX %08lX\n", (u_int)offset++, *lp++, *lp++, *lp++, *lp++);
+	*/
 }
 #endif
 
@@ -754,7 +756,8 @@ Boolean		InsertKeyRecord		(BTreeControlBlockPtr	 btreePtr,
 
 	if ( btreePtr->attributes & kBTBigKeysMask )
 	{
-		*((UInt16*) dst)++ = keyLength;		// use keyLength rather than key.length
+		// *((UInt16*) dst)++ = keyLength;		// use keyLength rather than key.length
+		MOVE_PTR_SET(dst, UInt16, 1, keyLength);
 		rawKeyLength = keyPtr->length16;
 		sizeOfLength = 2;
 	}
