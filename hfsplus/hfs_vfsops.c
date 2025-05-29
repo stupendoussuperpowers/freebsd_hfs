@@ -981,6 +981,52 @@ void hfs_setencodingbits(struct hfsmount* hfsmp, u_int32_t encoding) {
   }
 }
 
+int hfs_volupdate(struct hfsmount* hfsmp, enum volop op, int inroot) 
+{
+  ExtendedVCB* vcb;
+
+  vcb = HFSTOVCB(hfsmp);
+  vcb->vcbFlags |= 0xFF00;
+  vcb->vcbLsMod = gettime();
+
+  switch (op) {
+    case VOL_UPDATE:
+      break;
+    case VOL_MKDIR:
+      if (vcb->vcbDirCnt != 0xFFFFFFFF)
+        ++vcb->vcbDirCnt;
+      if (inroot && vcb->vcbNmRtDirs != 0xFFFF)
+        ++vcb->vcbNmRtDirs;
+      break;
+    case VOL_RMDIR:
+      if (vcb->vcbDirCnt != 0)
+        --vcb->vcbDirCnt;
+      if (inroot && vcb->vcbNmRtDirs != 0xFFFF)
+        --vcb->vcbNmRtDirs;
+      break;
+    case VOL_MKFILE:
+      if (vcb->vcbFilCnt != 0xFFFFFFFF)
+        ++vcb->vcbFilCnt;
+      if (inroot && vcb->vcbNmFls != 0xFFFF)
+        ++vcb->vcbNmFls;
+      break;
+    case VOL_RMFILE:
+      if (vcb->vcbFilCnt != 0)
+        --vcb->vcbFilCnt;
+      if (inroot && vcb->vcbNmFls != 0xFFFF)
+        --vcb->vcbNmFls;
+      break;
+  }
+
+#ifdef DARWIN_JOURNAL
+  if (hfsmp->jnl) {
+    hfs_flushvolumeheader(hfsmp, 0, 0);
+  }
+#endif
+
+  return (0);
+}
+
 //
 //  Should the above two function be in utils instead? I guess so?
 //  hfs_flushvolumeheaders

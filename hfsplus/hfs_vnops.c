@@ -190,6 +190,81 @@ int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify,
 	return (error);
 }
 
+int hfs_btsync(struct vnode *vp, int sync_transaction)
+{
+	struct cnode *cp = VTOC(vp);
+	register struct buf *bp;
+	struct timeval tv;
+	struct buf *nbp;
+	struct hfsmount *hfsmp = VTOHFS(vp);
+	// int s;
+
+	/*
+	 * Flush all dirty buffers associated with b-tree.
+	 */
+loop:
+	// s = splbio();
+	VI_LOCK(vp);
+	struct bufobj v_bufobj = vp->v_bufobj;
+
+	for (bp = TAILQ_FIRST(&v_bufobj.bo_dirty.bv_hd); bp; bp = nbp) {
+		nbp = TAILQ_NEXT(bp, b_bobufs);
+		if (_BUF_LOCK(bp, LK_EXCLUSIVE | LK_NOWAIT))
+			continue;
+		VI_UNLOCK(vp);
+		if ((bp->b_flags & B_DELWRI) == 0)
+			panic("hfs_btsync: not dirty (bp 0x%p hfsmp 0x%p)", bp, hfsmp);
+
+#ifdef DARWIN_JOURNAL
+		// XXXdbg
+		if (hfsmp->jnl && (bp->b_flags & B_LOCKED)) {
+			if ((bp->b_flags & B_META) == 0) {
+				panic("hfs: bp @ 0x%x is locked but not meta! jnl 0x%x\n",
+					  bp, hfsmp->jnl);
+			}
+			// if journal_active() returns >= 0 then the journal is ok and we 
+			// shouldn't do anything to this locked block (because it is part 
+			// of a transaction).  otherwise we'll just go through the normal 
+			// code path and flush the buffer.
+			if (journal_active(hfsmp->jnl) >= 0) {
+			    continue;
+			}
+		}
+#endif /* DARWIN_JOURNAL */
+
+#ifdef DARWIN
+		if (sync_transaction && !(bp->b_flags & B_LOCKED)) {
+#else
+		if (sync_transaction) {
+#endif
+			VI_LOCK(vp);
+			BUF_UNLOCK(bp);
+			continue;
+		}
+
+		bremfree(bp);
+#ifdef DARWIN
+		bp->b_flags |= B_BUSY;
+		bp->b_flags &= ~B_LOCKED;
+#endif
+
+	//	splx(s);
+
+		(void) bawrite(bp);
+
+		goto loop;
+	}
+	VI_UNLOCK(vp);
+	// splx(s);
+
+	getmicrotime(&tv);
+	if ((vp->v_vflag & VV_SYSTEM) && (VTOF(vp)->fcbBTCBPtr != NULL))
+		(void) BTSetLastSync(VTOF(vp), tv.tv_sec);
+	cp->c_flag &= ~(C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE);
+
+	return 0;
+}
+
 struct vop_vector hfs_vnodeops = {
 	.vop_default =		&default_vnodeops,
 
