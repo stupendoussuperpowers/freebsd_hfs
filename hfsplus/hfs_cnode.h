@@ -31,9 +31,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/vnode.h>
-#ifdef DARWIN_QUOTA
-#include <sys/quota.h>
-#endif
+// #ifdef DARWIN_QUOTA
+// #include <sys/quota.h>
+#include <ufs/ufs/quota.h>
+// #endif
 
 #include <hfsplus/hfs_catalog.h>
 #include <hfsplus/rangelist.h>
@@ -101,9 +102,9 @@ struct cnode
   struct vnode* c_rsrc_vp;  /* vnode for resource fork */
   struct vnode* c_devvp;    /* vnode for block I/O */
   struct cdev* c_dev;       /* cnode's device */
-#ifdef DARWIN_QUOTA
+//#ifdef DARWIN_QUOTA
   struct dquot* c_dquot[MAXQUOTAS]; /* cnode's quota info */
-#endif
+//#endif
   cnid_t c_childhint;     /* catalog hint for children */
   struct cat_desc c_desc; /* cnode's descriptor */
   struct cat_attr c_attr; /* cnode's attributes */
