@@ -24,6 +24,12 @@ Look at the mask checks which are currently commented out.
 
 <set/get>attr'list' functions seem to not be directly supported.
 
+*quota functions need more work, they seem to be relying on interfaces that have changed completely. Currently they are ifdef guarded by 'DARWIN_QUOTA'. 
+
+Inconsistent use of integer pointers likely due to the original code expecting 32 bit pointers. Changed to u_intptr_t whereever possible. 
+
+Non-existent 'console_user' on FreeBSD.
+
 --- 
 TODO:
 
