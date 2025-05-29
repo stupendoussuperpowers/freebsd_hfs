@@ -29,6 +29,11 @@
 
 #define KERNEL 1
 
+#ifndef NULL
+#define NULL 0 
+#define nil NULL
+#endif
+
 #define FREE free
 #define MALLOC5(var, type, size, pool, flags) \
 	(var) = (type) MALLOC((size), (pool), (flags))

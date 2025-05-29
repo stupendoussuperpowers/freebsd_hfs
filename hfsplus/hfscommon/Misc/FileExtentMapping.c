@@ -153,9 +153,9 @@
 
 #include <sys/types.h>
 
-#include "../../hfs.h"
-#include "../../hfs_format.h"
-#include "../../hfs_endian.h"
+#include <hfsplus/hfs.h>
+#include <hfsplus/hfs_format.h>
+#include <hfsplus/hfs_endian.h>
 
 #include "../headers/FileMgrInternal.h"
 #include "../headers/BTreesInternal.h"

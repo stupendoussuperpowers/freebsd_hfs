@@ -181,8 +181,7 @@ LocateCatalogRecord(const ExtendedVCB *volume, HFSCatalogNodeID folderID, const 
  *
  */
 
-void
-BuildCatalogKey(HFSCatalogNodeID parentID, const CatalogName *cName, Boolean isHFSPlus, CatalogKey *key)
+void BuildCatalogKey(HFSCatalogNodeID parentID, const CatalogName *cName, Boolean isHFSPlus, CatalogKey *key)
 {
 	if ( isHFSPlus )
 	{
@@ -215,10 +214,11 @@ BuildCatalogKeyUTF8(ExtendedVCB *volume, HFSCatalogNodeID parentID, const char *
 {
 	OSErr err = 0;
 
-    if ( name == NULL)
-        nameLength = 0;
-    else if (nameLength == kUndefinedStrLen)
-        nameLength = strlen(name);
+	if ( name == NULL) {
+		nameLength = 0;
+	} else if (nameLength == kUndefinedStrLen) {
+		nameLength = strlen(name);
+	}
 
 	if ( volume->vcbSigWord == kHFSPlusSigWord ) {
 		size_t unicodeBytes = 0;

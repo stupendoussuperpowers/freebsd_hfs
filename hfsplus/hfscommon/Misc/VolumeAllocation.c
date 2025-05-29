@@ -75,17 +75,23 @@ Internal routines:
 					Release a bitmap block back into the buffer cache.
 */
 
-#include "../../hfs_macos_defs.h"
+#ifndef NULL
+#define NULL 0 
+#define nil NULL
+#endif
 
 #include <sys/types.h>
-#include <sys/bio.h>
+
 #include <sys/buf.h>
+#include <sys/param.h>
 #include <sys/systm.h>
 
-#include "../../hfs.h"
-#include "../../hfs_dbg.h"
-#include "../../hfs_format.h"
-#include "../../hfs_endian.h"
+#include <hfsplus/hfs_macos_defs.h>
+
+#include <hfsplus/hfs.h>
+#include <hfsplus/hfs_dbg.h>
+#include <hfsplus/hfs_format.h>
+#include <hfsplus//hfs_endian.h>
 
 #include "../headers/FileMgrInternal.h"
 
@@ -111,7 +117,7 @@ static OSErr ReadBitmapBlock(
 
 static OSErr ReleaseBitmapBlock(
 	ExtendedVCB		*vcb,
-	UInt32			blockRef,
+	uintptr_t		blockRef,
 	Boolean			dirty);
 
 static OSErr BlockAllocateAny(
@@ -378,9 +384,7 @@ Exit:
 ;			CAREFULL!!! THIS CAN CAUSE OVERFLOW....USER BEWARE!!!
 ;_______________________________________________________________________
 */
-UInt32 FileBytesToBlocks(
-	SInt64 numerator,
-	UInt32 denominator)
+UInt32 FileBytesToBlocks(SInt64 numerator, UInt32 denominator)
 {
 	UInt32	quotient;
 	
@@ -446,7 +450,8 @@ static OSErr ReadBitmapBlock(
 			*blockRef = NULL;
 			*buffer = NULL;
 		} else {
-			*blockRef = (UInt32)bp;
+			// *blockRef = (UInt32)bp;
+			*blockRef = (uintptr_t) bp;
 			*buffer = (UInt32 *)bp->b_data;
 		}
 	}
@@ -468,10 +473,7 @@ static OSErr ReadBitmapBlock(
 ;	dirty
 ;_______________________________________________________________________
 */
-static OSErr ReleaseBitmapBlock(
-	ExtendedVCB		*vcb,
-	UInt32			blockRef,
-	Boolean			dirty)
+static OSErr ReleaseBitmapBlock(ExtendedVCB *vcb, uintptr_t blockRef, Boolean dirty)
 {
 	struct buf *bp = (struct buf *)blockRef;
 
@@ -757,7 +759,7 @@ Exit:
     if (currCache)
     	(void) ReleaseBitmapBlock(vcb, blockRef, dirty);
 
-	return err;
+    return err;
 }
 
 
