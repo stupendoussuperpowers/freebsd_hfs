@@ -13,6 +13,7 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_endian.c \
 	hfsplus/hfs_encodinghint.c \
 	hfsplus/hfs_quota.c \
+	hfsplus/rangelist.c \
 	hfsplus/hfscommon/Misc/FileExtentMapping.c \
 	hfsplus/hfscommon/Misc/VolumeAllocation.c \
 	hfsplus/hfscommon/Misc/BTreeWrapper.c \
