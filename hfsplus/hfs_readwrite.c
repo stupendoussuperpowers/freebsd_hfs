@@ -895,8 +895,7 @@ hfs_select(ap)
  * The block run is returned in logical blocks, and is the REMAINING amount of blocks
  */
 
-static int hfs_bmap(struct vop_bmap_args *ap)
-{
+static int hfs_bmap(struct vop_bmap_args *ap) {
         /* struct vop_bmap_args {
 		struct vnode *a_vp;
 		daddr_t a_bn;
@@ -909,14 +908,15 @@ static int hfs_bmap(struct vop_bmap_args *ap)
 	struct cnode *cp = VTOC(vp);
 	struct filefork *fp = VTOF(vp);
 	struct hfsmount *hfsmp = VTOHFS(vp);
-   int					retval = E_NONE;
-    daddr_t				logBlockSize;
-    size_t				bytesContAvail = 0;
-    off_t blockposition;
-    proc_t			*p = NULL;
-    int					lockExtBtree;
-    struct rl_entry *invalid_range;
-    enum rl_overlaptype overlaptype;
+        
+        int retval = E_NONE;
+        daddr_t logBlockSize;
+        size_t bytesContAvail = 0;
+        off_t blockposition;
+        proc_t *p = NULL;
+        int lockExtBtree;
+        struct rl_entry *invalid_range;
+        enum rl_overlaptype overlaptype;
 
 	/*
 	 * Check for underlying vnode requests and ensure that logical
@@ -943,26 +943,30 @@ static int hfs_bmap(struct vop_bmap_args *ap)
 	}
 
 	retval = MacToVFSError(
-                            MapFileBlockC (HFSTOVCB(hfsmp),
-                                            (FCB*)fp,
-                                            MAXPHYSIO,
-                                            blockposition,
-                                            ap->a_bnp,
-                                            &bytesContAvail));
+                        MapFileBlockC(
+                                HFSTOVCB(hfsmp),
+                                (FCB*)fp,
+                                MAXPHYSIO,
+                                blockposition,
+                                ap->a_bnp,
+                                &bytesContAvail
+                )
+        );
 
-    if (lockExtBtree) (void) hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
+    
+        if (lockExtBtree) (void) hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
 
-    if (retval == E_NONE) {
-        /* Adjust the mapping information for invalid file ranges: */
-        overlaptype = rl_scan(&fp->ff_invalidranges,
+        if (retval == E_NONE) {
+                /* Adjust the mapping information for invalid file ranges: */
+                overlaptype = rl_scan(&fp->ff_invalidranges,
                             blockposition,
                             blockposition + MAXPHYSIO - 1,
                             &invalid_range);
-        if (overlaptype != RL_NOOVERLAP) {
-            switch(overlaptype) {
-                case RL_MATCHINGOVERLAP:
-                case RL_OVERLAPCONTAINSRANGE:
-                case RL_OVERLAPSTARTSBEFORE:
+                if (overlaptype != RL_NOOVERLAP) {
+                        switch(overlaptype) {
+                                case RL_MATCHINGOVERLAP:
+                                case RL_OVERLAPCONTAINSRANGE:
+                                case RL_OVERLAPSTARTSBEFORE:
                     /* There's no valid block for this byte offset: */
                     *ap->a_bnp = (daddr_t)-1;
                     bytesContAvail = invalid_range->rl_end + 1 - blockposition;

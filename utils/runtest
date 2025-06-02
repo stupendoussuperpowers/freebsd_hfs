@@ -11,7 +11,7 @@ load() {
 }
 
 test_mount() {
-    mount -t hfs /test.img /hello
+    mount -t hfs -o hfs_uid=1000,hfs_gid=1000 /dev/md10 /hello
 }
 
 default() {
