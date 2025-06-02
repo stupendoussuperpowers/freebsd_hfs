@@ -588,7 +588,7 @@ static short hfs_getcatalog(void* p1, u_long p2, void* p3, short p4, void* p5) {
   return ENOENT;
 }
 
-static int overflow_extents(struct filefork* fp) {
+int overflow_extents(struct filefork* fp) {
   u_long blocks;
 
   if (VTOVCB(FTOV(fp))->vcbSigWord == kHFSPlusSigWord) {

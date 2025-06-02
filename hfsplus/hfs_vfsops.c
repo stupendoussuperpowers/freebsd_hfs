@@ -53,8 +53,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		printf("Returning EBUSY\n");
 		return EBUSY;
 	}
-	// if (vcount(devvp) > 1)
-	//  return (EBUSY);
 
 	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 	retval = vinvalbuf(devvp, V_SAVE, 0, 0);
@@ -100,19 +98,23 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	blkcnt = medsize / secsize;
 	disksize = medsize;
 
-	printf("No panics so far.\n");
 	printf("blksize: %d | HFS_PRI_SECTOR: %d \n", blksize, 1024 / blksize);
 
 	mdb_offset = HFS_PRI_SECTOR(blksize);
 	printf("mdb offset: %ld\n", mdb_offset);
 
-	
-	if ((retval = meta_bread(devvp, HFS_PRI_SECTOR(blksize), blksize, cred,
-				 &bp))) {
-		printf("meta bread retval: %d\n", retval);
-		goto error_exit;
+	// if ((retval = meta_bread(devvp, HFS_PRI_SECTOR(blksize), blksize,
+	// cred, 			 &bp))) {
+	//	printf("meta bread retval: %d\n", retval);
+	//	goto error_exit;
+	//}
+
+	if ((retval =
+		 bread(devvp, HFS_PRI_SECTOR(blksize), blksize, cred, &bp))) {
+		printf("bread retval: %d\n", retval);
 	}
 
+	printf("No panics so far \n");
 	return (45);
 
 	mdbp = (HFSMasterDirectoryBlock *)MALLOC(kMDBSize, M_TEMP, M_WAITOK);
@@ -610,7 +612,6 @@ static int hfs_mount(struct mount *mp) {
 	if (retval != E_NONE) {
 		// DBG_ERR(("hfs_mount: CAN'T GET DEVICE: %s, %x\n", args.fspec,
 		//	 ndp->ni_vp->v_rdev));
-		// goto error_exit;
 		return (retval);
 	}
 

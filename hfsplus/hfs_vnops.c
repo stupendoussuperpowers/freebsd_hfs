@@ -31,6 +31,8 @@
 #include "hfscommon/headers/BTreesInternal.h"
 #include "hfscommon/headers/FileMgrInternal.h"
 
+int hfs_bmap(struct vop_bmap_args*);
+int hfs_strategy(struct vop_strategy_args*);
 
 int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor)
 {
@@ -271,7 +273,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_access =		VOP_EOPNOTSUPP,
 	.vop_aclcheck =		VOP_EOPNOTSUPP,
 	.vop_advlock =		VOP_EOPNOTSUPP,
-	.vop_bmap =		VOP_EOPNOTSUPP,
+	.vop_bmap =		hfs_bmap,
 	.vop_cachedlookup =	VOP_EOPNOTSUPP,
 	.vop_close =		VOP_EOPNOTSUPP,
 	.vop_closeextattr =	VOP_EOPNOTSUPP,
@@ -308,7 +310,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_setattr =		VOP_EOPNOTSUPP,
 	.vop_setextattr =	VOP_EOPNOTSUPP,
 	.vop_setlabel =		VOP_EOPNOTSUPP,
-	.vop_strategy =		VOP_EOPNOTSUPP,
+	.vop_strategy =		hfs_strategy,
 	.vop_symlink =		VOP_EOPNOTSUPP,
 	.vop_unlock =		VOP_EOPNOTSUPP,
 	.vop_whiteout =		VOP_EOPNOTSUPP,

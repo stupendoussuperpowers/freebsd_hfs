@@ -87,6 +87,9 @@ int hfs_update(struct vnode* vp,
                struct timeval* access,
                struct timeval* modify,
                int waitfor);
+int hfs_bmap(struct vop_bmap_args*);
+int hfs_strategy(struct vop_strategy_args *ap);
+int overflow_extents(struct filefork*);
 #endif
 
 struct uio;  // This is more effective than #include <sys/uio.h> in case _KERNEL
