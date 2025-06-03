@@ -9,6 +9,15 @@
 #include <sys/systm.h>
 #include <sys/vnode.h>
 
+#include <geom/geom.h>
+#include <geom/geom_vfs.h>
+
+/*
+#include <ufs/ufs/ufsmount.h>
+#include <ufs/ufs/dinode.h>
+#include <libufs.h>
+*/
+
 #include <sys/conf.h>
 
 #include <sys/buf.h>
@@ -34,6 +43,8 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	u_int64_t disksize;
 	u_int64_t blkcnt;
 	u_int32_t blksize;
+
+	struct g_consumer *cp;
 
 	u_int secsize;
 	off_t medsize;
@@ -61,19 +72,22 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		printf("vinvalbuf: %d\n", retval);
 		return retval;
 	}
+	
 
 	ronly = (mp->mnt_flag & MNT_RDONLY) != 0;
-	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
-	// #if defined(__FreeBSD__) && __FreeBSD_version >= 501103 /* YYY no
-	// bump */ 	retval = 	    VOP_OPEN(devvp, ronly ? FREAD :
-	// FREAD | FWRITE, FSCRED, p, NULL); #else
-	retval =
-	    VOP_OPEN(devvp, ronly ? FREAD : FREAD | FWRITE, FSCRED, p, NULL);
-	// #endif
+	// vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
+	
+	g_topology_lock();
+	retval = g_vfs_open(devvp, &cp, "hfs", ronly ? 0 : 1);
+	g_topology_unlock();
 	VOP_UNLOCK(devvp);
+	
 	if (retval) {
-		printf("VOPOPEN retval: %d\n", retval);
-		return retval;
+		printf("g_vfs_open retval: %d\n", retval);
+		printf("EBUSY: %d | ENOENT: %d\n", EBUSY, ENOENT);
+		return (retval);
+	} else {
+		printf("g_vfs_open works?: %d\n", retval);
 	}
 
 	bp = NULL;
@@ -103,38 +117,40 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	mdb_offset = HFS_PRI_SECTOR(blksize);
 	printf("mdb offset: %ld\n", mdb_offset);
 
-	// if ((retval = meta_bread(devvp, HFS_PRI_SECTOR(blksize), blksize,
-	// cred, 			 &bp))) {
-	//	printf("meta bread retval: %d\n", retval);
-	//	goto error_exit;
-	//}
 
 	if ((retval =
-		 bread(devvp, HFS_PRI_SECTOR(blksize), blksize, cred, &bp))) {
+		 bread(devvp, mdb_offset, blksize, cred, &bp))) {
 		printf("bread retval: %d\n", retval);
 	}
 
-	printf("No panics so far \n");
-	return (45);
+	printf("bread worked?\n");
 
+	printf("pre mdbp malloc \n");	
 	mdbp = (HFSMasterDirectoryBlock *)MALLOC(kMDBSize, M_TEMP, M_WAITOK);
+	printf("pre bcopy \n");
 	bcopy(bp->b_data + HFS_PRI_OFFSET(blksize), mdbp, kMDBSize);
+	printf("pre brelse \n");
 	brelse(bp);
 
 	bp = NULL;
 
+	printf("Pre hfsmp malloc\n");
 	hfsmp = (struct hfsmount *)MALLOC(sizeof(struct hfsmount), M_HFSMNT,
 					  M_WAITOK);
 #if HFS_DIAGNOSTIC
 	printf("hfsmount: allocated struct hfsmount at %p\n", hfsmp);
 #endif
+	printf("pre bzero\n");
 	bzero(hfsmp, sizeof(struct hfsmount));
 
+	printf("bre mtx_init\n");
 	mtx_init(&hfsmp->hfs_renamelock, "hfs rename lock", NULL, MTX_DEF);
 
 	/*
 	 *  Init the volume information structure
 	 */
+
+	printf("No panics so far \n");
 	mp->mnt_data = (qaddr_t)hfsmp;
 	hfsmp->hfs_mp = mp;		  /* Make VFSTOHFS work */
 	hfsmp->hfs_vcb.vcb_hfsmp = hfsmp; /* Make VCBTOHFS work */
@@ -154,8 +170,11 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	int error;
 	struct hfs_mount_args *args = NULL;
 	vfs_getopt(mp->mnt_optnew, "hfs_uid", (void **)&args->hfs_uid, &error);
-	printf("HFS_Uid: %u", (unsigned int)args->hfs_uid);
+	printf("HFS_UID: %u", (unsigned int)args->hfs_uid);
 
+	printf("g_vfs_close?\n");
+	g_vfs_close(cp);
+	return (45);
 	//  if (args) {
 	// hfsmp->hfs_uid =
 	//     (args->hfs_uid == (uid_t)VNOVAL) ? UNKNOWNUID : args->hfs_uid;
@@ -470,7 +489,7 @@ static int hfs_mount(struct mount *mp) {
 	// struct hfs_mount_args args;
 	// struct vfsoptlist *opts;
 	// struct vfsoptlist *optsold;
-	struct nameidata ndp;
+	struct nameidata nd,  *ndp = &nd;
 	// size_t size;
 	int retval = E_NONE;
 	// int flags;
@@ -606,8 +625,10 @@ static int hfs_mount(struct mount *mp) {
 	// Not an update, or updating the name: look up the name
 	// and verify that it refers to a sensible block device.
 	//
-	NDINIT(&ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, from);
-	retval = namei(&ndp);
+	//
+	printf("From: %s\n", from); 
+	NDINIT(ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, from);
+	retval = namei(ndp);
 	printf("retval namei(): %d\n", retval);
 	if (retval != E_NONE) {
 		// DBG_ERR(("hfs_mount: CAN'T GET DEVICE: %s, %x\n", args.fspec,
@@ -615,10 +636,9 @@ static int hfs_mount(struct mount *mp) {
 		return (retval);
 	}
 
-	devvp = ndp.ni_vp;
-	printf("devvp: %p\n", devvp);
+	devvp = ndp->ni_vp;
+	NDFREE_PNBUF(ndp);
 
-	NDFREE_PNBUF(&ndp);
 	if (!vn_isdisk_error(devvp, &retval)) {
 		printf("v_type: %d | VBLK: %d\n", devvp->v_type, VBLK);
 		printf("vn_isdisk: %d\n", retval);
@@ -633,8 +653,7 @@ static int hfs_mount(struct mount *mp) {
 	// necessary
 	// permissions on the device.
 	//
-	printf("p->td_proc->p_ucred->cr_uid: %d\n",
-	       p->td_proc->p_ucred->cr_uid);
+	
 	if (p->td_proc->p_ucred->cr_uid != 0) {
 		accessmode = VREAD;
 		if ((mp->mnt_flag & MNT_RDONLY) == 0)
