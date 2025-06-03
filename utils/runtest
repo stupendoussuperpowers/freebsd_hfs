@@ -1,8 +1,11 @@
 #!/bin/sh
 
+init() {
+    mdconfig -a -t vnode -f /plus_hfs.dmg -u 10 
+    mdconfig -a -t vnode -f /plain_hfs.dmg -u 11 
+}
+
 build() {
-    kldunload /usr/obj/sharedcode/hfs.ko
-    mkdir -p /usr/obj/sharedcode/hfsplus
     make clean && make obj && make
 }
 
@@ -11,7 +14,7 @@ load() {
 }
 
 test_mount() {
-    mount -t hfs -o hfs_uid=1000,hfs_gid=1000 /dev/md10 /hello
+    mount -t hfs -o hfs_uid=1000,hfs_gid=1000 /dev/md12 /hello
 }
 
 default() {

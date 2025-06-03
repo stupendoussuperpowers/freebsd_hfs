@@ -549,7 +549,10 @@ hfs_getnewvnode(struct hfsmount* hfsmp,
   }
 
   /* Allocate a new vnode. If unsuccesful, leave after freeing memory */
-  if ((retval = getnewvnode("hfs", mp, &hfs_vnodeops, &new_vp))) {
+  printf("pre getnewvnode\n");
+  retval = getnewvnode("hfs", mp, &hfs_vnodeops, &new_vp);
+  printf("post getnewvode\n");
+  if (retval) {
     if (allocated) {
       hfs_chashremove(cp);
       if (ISSET(cp->c_flag, C_WALLOC)) {

@@ -36,6 +36,6 @@ SRCS+= vnode_if.h
 
 SYSDIR?= /usr/src
 
-CFLAGS+= -I${.CURDIR} -DKERNEL
+CFLAGS+= -I${.CURDIR} -DKERNEL -g
 
 .include <bsd.kmod.mk>

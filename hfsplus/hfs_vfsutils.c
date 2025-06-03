@@ -275,6 +275,10 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   struct cat_attr cnattr;
   UInt32 blockSize;
   OSErr retval;
+  
+  printf("HFS+: %x | HFS: %x | signature: %x | swap: %x\n", kHFSPlusSigWord, kHFSJSigWord, vhp->signature, SWAP_BE16(vhp->signature));
+
+  printf("version: %x | version: %x | swap: %x\n", kHFSPlusVersion, vhp->version, SWAP_BE16(vhp->version));
 
   // XXXdbg - added the kHFSJSigWord case
   if ((SWAP_BE16(vhp->signature) != kHFSPlusSigWord &&
@@ -288,24 +292,30 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
 
   /* Block size must be at least 512 and a power of 2 */
   blockSize = SWAP_BE32(vhp->blockSize);
-  if (blockSize < 512 || (blockSize & (blockSize - 1)) != 0)
+  if (blockSize < 512 || (blockSize & (blockSize - 1)) != 0) {
+    printf("blockSize: %d\n", blockSize);
     return (EINVAL);
+  }
 
   /* don't mount a writable volume if its dirty, it must be cleaned by fsck_hfs
    */
 #ifdef DARWIN_JOURNAL
   if (hfsmp->hfs_fs_ronly == 0 && hfsmp->jnl == NULL &&
-      (SWAP_BE32(vhp->attributes) & kHFSVolumeUnmountedMask) == 0)
+      (SWAP_BE32(vhp->attributes) & kHFSVolumeUnmountedMask) == 0) {
 #else
   if (hfsmp->hfs_fs_ronly == 0 &&
-      (SWAP_BE32(vhp->attributes) & kHFSVolumeUnmountedMask) == 0)
+      (SWAP_BE32(vhp->attributes) & kHFSVolumeUnmountedMask) == 0) {
 #endif
+    printf("hfsmp->hfs_fs_ronly: %d | kHFSVUM: %d | vhp attr: %d\n",hfsmp->hfs_fs_ronly, 
+           kHFSVolumeUnmountedMask, SWAP_BE32(vhp->attributes));
     return (EINVAL);
+  }
 
   /* Make sure we can live with the physical block size. */
   if ((disksize & (hfsmp->hfs_phys_block_size - 1)) ||
       (embeddedOffset & (hfsmp->hfs_phys_block_size - 1)) ||
       (SWAP_BE32(vhp->blockSize) < hfsmp->hfs_phys_block_size)) {
+    printf("cant live with physical block size.\n");
     return (ENXIO);
   }
   /*
@@ -313,6 +323,9 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
    * Note - the VCB starts out clear (all zeros)
    */
   vcb = HFSTOVCB(hfsmp);
+
+  printf("No panics so far\n");
+
 
   vcb->vcbSigWord = SWAP_BE16(vhp->signature);
 
@@ -339,7 +352,9 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   if (!hfsmp->hfs_fs_ronly)
     vcb->vcbWrCnt++; /* compensate for write of Volume Header on last flush */
 
+  printf("pre vcb lock\n");
   VCB_LOCK_INIT(vcb);
+  printf("post vcb lock\n");
 
   /* Now fill in the Extended VCB info */
   vcb->nextAllocation = SWAP_BE32(vhp->nextAllocation);
@@ -379,11 +394,17 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
   cnattr.ca_blocks = vhp->extentsFile.totalBlocks;
 
+  printf("pre hfs_getnewvnode()\n");
   retval =
       hfs_getnewvnode(hfsmp, NULL, &cndesc, 0, &cnattr,
                       (struct cat_fork*)&vhp->extentsFile, &vcb->extentsRefNum);
-  SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
 
+  printf("post hfs_getnewvnode()\n");
+
+  SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
+  
+  printf("post swap hfs plus fork data\n"); 
+  
   if (retval)
     goto ErrorExit;
   retval = MacToVFSError(BTOpenPath(
