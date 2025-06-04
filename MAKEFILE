@@ -34,7 +34,7 @@ SRCS= hfsplus/hfs_vfsops.c \
 
 SRCS+= vnode_if.h
 
-SYSDIR?= /usr/src
+SYSDIR?= /usr/src/sys
 
 CFLAGS+= -I${.CURDIR} -DKERNEL -g
 
