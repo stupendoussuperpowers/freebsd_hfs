@@ -55,12 +55,14 @@
  *	@(#)hfs_chash.c
  *	derived from @(#)ufs_ihash.c	8.7 (Berkeley) 5/17/95
  */
+#include <sys/types.h>
+
+#include <sys/param.h>
 
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
-#include <sys/param.h>
 #include <sys/proc.h>
 #include <sys/queue.h>
 #include <sys/systm.h>

@@ -24,12 +24,13 @@
 
 #include <sys/appleapiopts.h>
 
+#include <sys/types.h>
+
 #ifdef _KERNEL
 #ifdef __APPLE_API_PRIVATE
 #include <sys/lockmgr.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/vnode.h>
 // #ifdef DARWIN_QUOTA
 // #include <sys/quota.h>

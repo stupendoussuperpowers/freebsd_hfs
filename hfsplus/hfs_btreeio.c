@@ -74,6 +74,8 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 		bp = _GETBLK(vp, blockNum, block->blockSize, 0, 0);
 	} else {
 		printf("break bread\n");
+		printf("bp: %p | vp: %p | blockNum: %d | blockSize: %d\n", bp, vp, blockNum, block->blockSize);
+		printf("vp->v_data: %p\n", vp->v_data);
 		retval = bread(vp, blockNum, block->blockSize, NOCRED, &bp);
 		printf("bread retval: %d\n", retval);
 	}

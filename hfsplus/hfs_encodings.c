@@ -19,12 +19,14 @@
  *
  * @APPLE_LICENSE_HEADER_END@
  */
+#include <sys/types.h>
+
+#include <sys/param.h>
 
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
-#include <sys/param.h>
 #include <sys/queue.h>
 #include <sys/systm.h>
 #include <sys/utfconv.h>
