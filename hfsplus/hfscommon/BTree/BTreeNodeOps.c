@@ -188,12 +188,10 @@ Result:
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	GetNode		(BTreeControlBlockPtr	 btreePtr,
-						 UInt32					 nodeNum,
-						 NodeRec				*nodePtr )
-{
-	OSStatus			err;
-	GetBlockProcPtr		getNodeProc;
+OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr ) {
+	printf("Enter GetNode\n");
+	OSStatus err;
+	GetBlockProcPtr getNodeProc;
 	
 
 	//€€ is nodeNum within proper range?
@@ -207,11 +205,9 @@ OSStatus	GetNode		(BTreeControlBlockPtr	 btreePtr,
 	nodePtr->blockSize = btreePtr->nodeSize;	// indicate the size of a node
 	
 	getNodeProc = btreePtr->getBlockProc;
-	err = getNodeProc (btreePtr->fileRefNum,
-					   nodeNum,
-					   kGetBlock,
-					   nodePtr );
-
+	printf("getNodeProc\n");
+	err = getNodeProc(btreePtr->fileRefNum, nodeNum, kGetBlock, nodePtr);
+	printf("getNodeProc\n");
 	if (err != noErr)
 	{
 		Panic ("GetNode: getNodeProc returned error.");

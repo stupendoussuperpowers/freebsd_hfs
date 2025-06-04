@@ -85,8 +85,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		printf("g_vfs_open retval: %d\n", retval);
 		printf("EBUSY: %d | ENOENT: %d\n", EBUSY, ENOENT);
 		return (retval);
-	} else {
-		printf("g_vfs_open works?: %d\n", retval);
 	}
 
 	bp = NULL;
@@ -94,27 +92,22 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	mdbp = NULL;
 
 	/* Get the real physical block size. */
-	printf("Trying first vop ioctl\n");
 	if (VOP_IOCTL(devvp, DIOCGSECTORSIZE, (caddr_t)&secsize, 0, cred, p)) {
 		retval = ENXIO;
 		printf("first vop ioctl: %d\n", retval);
 		goto error_exit;
 	}
-	printf("Trying second vop ioctl\n");
 	if (VOP_IOCTL(devvp, DIOCGMEDIASIZE, (caddr_t)&medsize, 0, cred, p)) {
 		retval = ENXIO;
 		printf("second vop ioctl: %d\n", retval);
 		goto error_exit;
 	}
-	printf("secsize: %d | medsize: %ld\n", secsize, medsize);
+	
 	blksize = secsize;
 	blkcnt = medsize / secsize;
 	disksize = medsize;
 
-	printf("blksize: %d | HFS_PRI_SECTOR: %d \n", blksize, 1024 / blksize);
-
 	mdb_offset = HFS_PRI_SECTOR(blksize);
-	printf("mdb offset: %ld\n", mdb_offset);
 
 	if ((retval = bread(devvp, mdb_offset, blksize, cred, &bp))) {
 		printf("bread retval: %d\n", retval);
@@ -122,7 +115,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	mdbp = (HFSMasterDirectoryBlock *)MALLOC(kMDBSize, M_TEMP, M_WAITOK);
 	bcopy(bp->b_data + HFS_PRI_OFFSET(blksize), mdbp, kMDBSize);
-	printf("pre brelse \n");
 	brelse(bp);
 
 	bp = NULL;
@@ -134,13 +126,11 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 #endif
 	bzero(hfsmp, sizeof(struct hfsmount));
 
-	printf("pre mtx init\n");
 	mtx_init(&hfsmp->hfs_renamelock, "hfs rename lock", NULL, MTX_DEF);
 
 	/*
 	 *  Init the volume information structure
 	 */
-	printf("pre hpfsmp-> ing\n");
 	mp->mnt_data = (qaddr_t)hfsmp;
 	hfsmp->hfs_mp = mp;		  /* Make VFSTOHFS work */
 	hfsmp->hfs_vcb.vcb_hfsmp = hfsmp; /* Make VCBTOHFS work */
@@ -162,26 +152,14 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	args = (struct hfs_mount_args *)MALLOC(sizeof(struct hfs_mount_args), M_HFSMNT,
 					M_WAITOK);
 
-	printf("pre vfs_getopt\n");
 	
 	char *uidstr, *gidstr; 
 
 	retval = vfs_getopt(mp->mnt_optnew, "hfs_uid", (void **)&uidstr, NULL);
-	printf("hfs_uid retval: %d\n", retval);
 	retval = vfs_getopt(mp->mnt_optnew, "hfs_gid", (void **)&gidstr, NULL);
-	printf("hfs_gid retval: %d\n", retval);
-	printf("vfs_getopt done\n");
-
 
 	args->hfs_uid = 999; // (uid_t)strtoul(uidstr, NULL, 10);
 	args->hfs_gid = 999; // (gid_t)strtoul(gidstr, NULL, 10);
-
-	printf("args-> set?\n");
-
-	printf("HFS_UID: %u\n", args->hfs_uid);
-	printf("HFS_GID: %u\n", args->hfs_gid);
-
-	// printf("g_vfs_close?\n");
 
 	// g_topology_lock();
 	// g_vfs_close(cp);
@@ -462,8 +440,6 @@ static int hfs_mount(struct mount *mp) {
 	// If updating, check whether changing from read-only to
 	// read/write; if there is no device name, that's all we do.
 
-	printf("mnt_flags: %lu, MNT_UPDATE: %llu\n", mp->mnt_flag, MNT_UPDATE);
-
 	/*
 		if (mp->mnt_flag & MNT_UPDATE) {
 			hfsmp = VFSTOHFS(mp);
@@ -556,10 +532,8 @@ static int hfs_mount(struct mount *mp) {
 	// and verify that it refers to a sensible block device.
 	//
 	//
-	printf("From: %s\n", from);
 	NDINIT(ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, from);
 	retval = namei(ndp);
-	printf("retval namei(): %d\n", retval);
 	if (retval != E_NONE) {
 		// DBG_ERR(("hfs_mount: CAN'T GET DEVICE: %s, %x\n", args.fspec,
 		//	 ndp->ni_vp->v_rdev));
@@ -570,8 +544,6 @@ static int hfs_mount(struct mount *mp) {
 	NDFREE_PNBUF(ndp);
 
 	if (!vn_isdisk_error(devvp, &retval)) {
-		printf("v_type: %d | VBLK: %d\n", devvp->v_type, VBLK);
-		printf("vn_isdisk: %d\n", retval);
 		vrele(devvp);
 		return (retval);
 	}
@@ -598,14 +570,12 @@ static int hfs_mount(struct mount *mp) {
 	}
 
 	if ((mp->mnt_flag & MNT_UPDATE) == 0) {
-		printf("Not update\n");
 		retval = hfs_mountfs(devvp, mp);
 		if (retval != E_NONE) {
 			printf("hfs_mountfs: %d\n", retval);
 			vrele(devvp);
 		}
 	} else {
-		printf("Change fs\n");
 		// if (devvp != hfsmp->hfs_devvp) {
 		// 	printf("devvp!=hfsmp->hfs_devvp\n");
 		// 	retval = EINVAL; // needs translation
@@ -1125,7 +1095,7 @@ int hfs_volupdate(struct hfsmount *hfsmp, enum volop op, int inroot) {
 }
 
 static int hfs_init(struct vfsconf *vfsp) {
-	printf("---hfs_init---\n");
+	printf("[===hfs_init===]\n");
 	static int done = 0;
 
 	if (done) 

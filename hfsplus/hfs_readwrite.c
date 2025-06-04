@@ -976,6 +976,7 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 		int *a_runp;
 	} */
 
+	printf("--- hfs_bmap ---\n");
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct filefork *fp = VTOF(vp);
@@ -1090,7 +1091,7 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			*ap->a_runb = 0;
 #endif
 	};
-
+	printf("--- hfs_bmap ---\n");
 	return (retval);
 }
 
@@ -1475,6 +1476,7 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 	register struct buf *bp = ap->a_bp;
 	register struct vnode *vp = bp->b_vp;
 	register struct cnode *cp = VTOC(vp);
+	// struct bufobj *bo;
 	int retval = 0;
 
 	if (vp->v_type == VBLK || vp->v_type == VCHR)
@@ -1507,14 +1509,20 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 	vp = cp->c_devvp;
 	// bp->b_dev = vp->v_rdev;
 
-#if __FreeBSD_version >= 501112 /* YYY no specific bump */
+/*
 	bp->b_iooffset = dbtob(bp->b_blkno);
-#endif
-#if __FreeBSD_version >= 500100 /* YYY the change has had no version bump */
-				// VOP_SPECSTRATEGY(vp, bp);
-#else
-	VOP_STRATEGY(vp, bp);
-#endif
+	bo = VFSTOEXT2(vp->v_mount)->um_bo;
+	BO_STRATEGY(bo, bp);
+*/
+
+	bp->b_iooffset = dbtob(bp->b_blkno);
+	
+	// bo = VFSTOHFS(vp->v_mount)->um_bo;
+	// BO_STRATEGY(bo, bp);
+
+	// VOP_STRATEGY(vp, bp);
+	
+	BO_STRATEGY(&vp->v_bufobj, bp);
 	printf("[Exit | hfs_strategy]\n");
 	return (0);
 }

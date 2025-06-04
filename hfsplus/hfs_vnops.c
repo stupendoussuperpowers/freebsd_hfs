@@ -34,8 +34,7 @@
 int hfs_bmap(struct vop_bmap_args*);
 int hfs_strategy(struct vop_strategy_args*);
 
-int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor)
-{
+int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor) {
 	struct cnode *cp = VTOC(vp);
 	proc_t *p;
 	struct cat_fork *dataforkp = NULL;
@@ -267,6 +266,80 @@ loop:
 	return 0;
 }
 
+static int hfs_getattr(struct vop_getattr_args *ap) {
+	/* {
+		struct vnode *a_vp;
+		struct vattr *a_vap;
+		struct ucred *a_cred;
+		proc_t *a_td;
+	} */
+
+	printf("---[hfs_getattr]---\n");
+	struct vnode *vp = ap->a_vp;
+	struct cnode *cp = VTOC(vp);
+	struct vattr *vap = ap->a_vap;
+	struct timeval tv;
+
+	getmicrotime(&tv);
+	CTIMES(cp, &tv, &tv);
+
+	vap->va_type = vp->v_type;
+	/*
+	 * [2856576]  Since we are dynamically changing the owner, also
+	 * effectively turn off the set-user-id and set-group-id bits,
+	 * just like chmod(2) would when changing ownership.  This prevents
+	 * a security hole where set-user-id programs run as whoever is
+	 * logged on (or root if nobody is logged in yet!)
+	 */
+	vap->va_mode = (cp->c_uid == UNKNOWNUID) ? cp->c_mode & ~(S_ISUID | S_ISGID) : cp->c_mode;
+	vap->va_nlink = cp->c_nlink;
+#ifdef DARWIN
+	vap->va_uid = (cp->c_uid == UNKNOWNUID) ? console_user : cp->c_uid;
+#else
+	vap->va_uid = (cp->c_uid == UNKNOWNUID) ? 0 : cp->c_uid;
+#endif
+	vap->va_gid = cp->c_gid;
+	vap->va_fsid = dev2udev(cp->c_dev);
+	/*
+	 * Exporting file IDs from HFS Plus:
+	 *
+	 * For "normal" files the c_fileid is the same value as the
+	 * c_cnid.  But for hard link files, they are different - the
+	 * c_cnid belongs to the active directory entry (ie the link)
+	 * and the c_fileid is for the actual inode (ie the data file).
+	 *
+	 * The stat call (getattr) will always return the c_fileid
+	 * and Carbon APIs, which are hardlink-ignorant, will always
+	 * receive the c_cnid (from getattrlist).
+	 */
+	vap->va_fileid = cp->c_fileid;
+	vap->va_atime.tv_sec = cp->c_atime;
+	vap->va_atime.tv_nsec = 0;
+	vap->va_mtime.tv_sec = cp->c_mtime;
+	vap->va_mtime.tv_nsec = cp->c_mtime_nsec;
+	vap->va_ctime.tv_sec = cp->c_ctime;
+	vap->va_ctime.tv_nsec = 0;
+	vap->va_gen = 0;
+	vap->va_flags = cp->c_xflags;
+	vap->va_rdev = 0;
+	vap->va_blocksize = VTOVFS(vp)->mnt_stat.f_iosize;
+	vap->va_filerev = 0;
+	vap->va_spare = 0;
+	if (vp->v_type == VDIR) {
+		vap->va_size = cp->c_nlink * AVERAGE_HFSDIRENTRY_SIZE;
+		vap->va_bytes = 0;
+	} else {
+		vap->va_size = VTOF(vp)->ff_size;
+		vap->va_bytes = (u_quad_t)cp->c_blocks *
+				    (u_quad_t)VTOVCB(vp)->blockSize;
+		if (vp->v_type == VBLK || vp->v_type == VCHR)
+			vap->va_rdev = cp->c_rdev;
+	}
+	
+	printf("---[hfs_getattr]---\n");
+	return (0);
+}
+
 struct vop_vector hfs_vnodeops = {
 	.vop_default =		&default_vnodeops,
 
@@ -281,7 +354,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_deleteextattr =	VOP_EOPNOTSUPP,
 	.vop_fsync =		VOP_EOPNOTSUPP,
 	.vop_getacl =		VOP_EOPNOTSUPP,
-	.vop_getattr =		VOP_EOPNOTSUPP,
+	.vop_getattr =		hfs_getattr,
 	.vop_getextattr =	VOP_EOPNOTSUPP,
 	.vop_getwritemount =	VOP_EOPNOTSUPP,
 	.vop_inactive =		VOP_EOPNOTSUPP,

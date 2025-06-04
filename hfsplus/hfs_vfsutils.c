@@ -191,6 +191,8 @@ OSErr hfs_MountHFSVolume(struct hfsmount* hfsmp,
                           &vcb->extentsRefNum);
   if (error)
     goto MtVolErr;
+
+  printf("extentRefNum BTOpenPath\n");
   error = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
@@ -221,6 +223,8 @@ OSErr hfs_MountHFSVolume(struct hfsmount* hfsmp,
     VOP_UNLOCK(vcb->extentsRefNum);
     goto MtVolErr;
   }
+
+  printf("catalog BTOpenPath\n");
   error = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
@@ -275,10 +279,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   struct cat_attr cnattr;
   UInt32 blockSize;
   OSErr retval;
-  
-  printf("HFS+: %x | HFS: %x | signature: %x | swap: %x\n", kHFSPlusSigWord, kHFSJSigWord, vhp->signature, SWAP_BE16(vhp->signature));
-
-  printf("version: %x | version: %x | swap: %x\n", kHFSPlusVersion, vhp->version, SWAP_BE16(vhp->version));
 
   // XXXdbg - added the kHFSJSigWord case
   if ((SWAP_BE16(vhp->signature) != kHFSPlusSigWord &&
@@ -324,9 +324,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
    */
   vcb = HFSTOVCB(hfsmp);
 
-  printf("No panics so far\n");
-
-
   vcb->vcbSigWord = SWAP_BE16(vhp->signature);
 
   // XXXdbg - remap this in case we've mounted a dirty journaled volume
@@ -352,9 +349,7 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   if (!hfsmp->hfs_fs_ronly)
     vcb->vcbWrCnt++; /* compensate for write of Volume Header on last flush */
 
-  printf("pre vcb lock\n");
   VCB_LOCK_INIT(vcb);
-  printf("post vcb lock\n");
 
   /* Now fill in the Extended VCB info */
   vcb->nextAllocation = SWAP_BE32(vhp->nextAllocation);
@@ -394,16 +389,11 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
   cnattr.ca_blocks = vhp->extentsFile.totalBlocks;
 
-  printf("pre hfs_getnewvnode()\n");
   retval =
       hfs_getnewvnode(hfsmp, NULL, &cndesc, 0, &cnattr,
                       (struct cat_fork*)&vhp->extentsFile, &vcb->extentsRefNum);
 
-  printf("post hfs_getnewvnode()\n");
-
   SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
-  
-  printf("post swap hfs plus fork data\n"); 
   
   if (retval) {
     printf("getnewvnode: %d\n", retval);
@@ -411,12 +401,12 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   }
 
   KASSERT(vcb->extentsRefNum != NULL, ("extentsRefNum is NULL."));
-  printf("extentsRefNum: %p\n", vcb->extentsRefNum);
 
+  printf("extentRefNum BTOpenPath\n");
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeysPlus,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
-  printf("Post mac to vfs call\n");
+  printf("Post extentRefNum BTOpenPath\n");
   if (retval) {
     printf("MacToVFSError: %d\n", retval);
     VOP_UNLOCK(vcb->extentsRefNum);
@@ -433,10 +423,11 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   SWAP_HFS_PLUS_FORK_DATA(&vhp->catalogFile);
   cnattr.ca_blocks = vhp->catalogFile.totalBlocks;
 
+
+  printf("pre hfs_getnewvnode catalogFile\n");
   retval =
       hfs_getnewvnode(hfsmp, NULL, &cndesc, 0, &cnattr,
                       (struct cat_fork*)&vhp->catalogFile, &vcb->catalogRefNum);
-
   printf("post catalog getnewnvode: %d\n", retval);
 
   SWAP_HFS_PLUS_FORK_DATA(&vhp->catalogFile);
@@ -444,11 +435,13 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
   }
-  printf("Pre mactovfserror\n");
+  
+  printf("catalog BTOpenPath\n");
+  
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareExtendedCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
-  printf("post mactovfserror\n");
+  printf("post catalog BTOpenPath\n");
   if (retval) {
     printf("mactovfs retval: %d\n", retval);
     VOP_UNLOCK(vcb->catalogRefNum);
