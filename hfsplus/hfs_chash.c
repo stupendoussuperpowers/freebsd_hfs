@@ -121,11 +121,7 @@ __private_extern__ struct cnode *hfs_chashget(struct cdev *dev, ino_t inum,
 	 */
 	while(1) {
 		mtx_lock(&hfs_chash_slock);
-		printf("pre cnodehash\n");
-		cp = CNODEHASH(dev2udev(dev), inum)->lh_first;
-		printf("post cnode hash. cp: %p\n", &cp);
-		
-		for (; cp; cp = cp->c_hash.le_next) {
+		for (cp = CNODEHASH(dev2udev(dev), inum)->lh_first; cp; cp = cp->c_hash.le_next) {
 			printf("inside the loop\n");
 			if ((cp->c_fileid != inum) || (cp->c_dev != dev))
 				continue;
@@ -211,6 +207,7 @@ __private_extern__ struct cnode *hfs_chashget(struct cdev *dev, ino_t inum,
 			}
 			return (cp);
 		}
+		break;
 	}
 	printf("outside of the for loop.\n");
 	mtx_unlock(&hfs_chash_slock);

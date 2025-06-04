@@ -405,12 +405,20 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   
   printf("post swap hfs plus fork data\n"); 
   
-  if (retval)
+  if (retval) {
+    printf("getnewvnode: %d\n", retval);
     goto ErrorExit;
+  }
+
+  KASSERT(vcb->extentsRefNum != NULL, ("extentsRefNum is NULL."));
+  printf("extentsRefNum: %p\n", vcb->extentsRefNum);
+
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeysPlus,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
+  printf("Post mac to vfs call\n");
   if (retval) {
+    printf("MacToVFSError: %d\n", retval);
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
   }
@@ -428,15 +436,21 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   retval =
       hfs_getnewvnode(hfsmp, NULL, &cndesc, 0, &cnattr,
                       (struct cat_fork*)&vhp->catalogFile, &vcb->catalogRefNum);
+
+  printf("post catalog getnewnvode: %d\n", retval);
+
   SWAP_HFS_PLUS_FORK_DATA(&vhp->catalogFile);
   if (retval) {
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
   }
+  printf("Pre mactovfserror\n");
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareExtendedCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
+  printf("post mactovfserror\n");
   if (retval) {
+    printf("mactovfs retval: %d\n", retval);
     VOP_UNLOCK(vcb->catalogRefNum);
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;

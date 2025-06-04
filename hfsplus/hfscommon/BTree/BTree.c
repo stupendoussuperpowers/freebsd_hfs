@@ -206,8 +206,9 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 
 
 	//////////////////////// Allocate Control Block /////////////////////////////
-
+	printf("Pre NewPtrSysClear\n");
 	btreePtr = (BTreeControlBlock*) NewPtrSysClear( sizeof( BTreeControlBlock ) );
+	printf("post newptrsysclear\n");
 	if (btreePtr == nil)
 	{
 		Panic ("BTOpen: no memory for btreePtr.");
@@ -220,18 +221,31 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 	btreePtr->keyCompareProc	= keyCompareProc;
 
 	/////////////////////////// Read Header Node ////////////////////////////////
-
+	printf("pre get fileref num\n");
 	nodeRec.buffer				= nil;				// so we can call ReleaseNode
 	btreePtr->fileRefNum		= GetFileRefNumFromFCB(filePtr);
 	filePtr->fcbBTCBPtr			= (Ptr) btreePtr;	// attach btree cb to file
-
+	printf("pre vtohfs\n");
 	/* The minimum node size is the physical block size */
-	nodeRec.blockSize = VTOHFS(btreePtr->fileRefNum)->hfs_phys_block_size;
+	
+	KASSERT(btreePtr->fileRefNum != NULL, ("fileRefNum is NULL"));
+	KASSERT(btreePtr->fileRefNum->v_mount != NULL, ("v_mount is NULL"));
+	KASSERT(btreePtr->fileRefNum->v_mount->mnt_data != NULL, ("mnt_data is NULL"));
 
+	KASSERT(VTOHFS(btreePtr->fileRefNum) != NULL, ("vtohsf is NULL"));
+
+	printf("filerefnum: %p\n", btreePtr->fileRefNum);
+	printf("v_mount: %p\n", btreePtr->fileRefNum->v_mount);
+	printf("mnt_data: %p\n", btreePtr->fileRefNum->v_mount->mnt_data);
+	printf("vtohfs: %p\n", VTOHFS(btreePtr->fileRefNum));
+	printf("hfs phys block size: %lu\n", VTOHFS(btreePtr->fileRefNum)->hfs_phys_block_size);
+	
+	nodeRec.blockSize = VTOHFS(btreePtr->fileRefNum)->hfs_phys_block_size;
+	printf("require file lock\n");
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
 
 	// it is now safe to call M_ExitOnError (err)
-
+	printf("pre set block size proc\n");
 	err = setBlockSizeProc (btreePtr->fileRefNum, nodeRec.blockSize, 1);
 	M_ExitOnError (err);
 
@@ -240,6 +254,7 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 						kHeaderNodeNum,
 						kGetBlock,
 						&nodeRec );
+	printf("post get block proc\n");
 	if (err != noErr)
 	{
 		nodeRec.buffer = nil;
@@ -252,7 +267,7 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 
 
 	///////////////////////////// verify header /////////////////////////////////
-
+	printf("post verify header\n");
 	err = VerifyHeader (filePtr, header);
 	M_ExitOnError (err);
 
@@ -260,7 +275,7 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 	///////////////////// Initalize fields from header //////////////////////////
 	
     PanicIf ( (FCBTOVCB(filePtr)->vcbSigWord != 0x4244) && (header->nodeSize == 512), "earTOpenPath: wrong node size for HFS+ volume!");	// 0x4244 = 'BD'
-
+	printf("here\n");
 	btreePtr->treeDepth			= header->treeDepth;
 	btreePtr->rootNode			= header->rootNode;
 	btreePtr->leafRecords		= header->leafRecords;
@@ -330,7 +345,7 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 
 	//€€ total nodes * node size <= LEOF?
 
-
+	printf("pre release node.\n");
 	err = ReleaseNode (btreePtr, &nodeRec);
 	M_ExitOnError (err);
 
