@@ -63,14 +63,11 @@ typedef int (*unicode_to_hfs_func_t)(const UniChar* uni_str,
                                      UInt32 unicodeChars,
                                      Str31 hfs_str);
 
-int
-hfs_addconverter(int kmod_id,
-                 UInt32 encoding,
-                 hfs_to_unicode_func_t get_unicode,
-                 unicode_to_hfs_func_t get_hfsname);
+void hfs_converterinit(void);
 
-int
-hfs_remconverter(int kmod_id, UInt32 encoding);
+int hfs_addconverter(int kmod_id, UInt32 encoding, hfs_to_unicode_func_t get_unicode, unicode_to_hfs_func_t get_hfsname);
+
+int hfs_remconverter(int kmod_id, UInt32 encoding);
 
 #endif /* __APPLE_API_UNSTABLE */
 

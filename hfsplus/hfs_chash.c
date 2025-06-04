@@ -82,21 +82,17 @@ struct mtx hfs_chash_slock;
 /*
  * Initialize cnode hash table.
  */
-__private_extern__ void
-hfs_chashinit(void)
-{
-  cnodehashtbl = hashinit(desiredvnodes, M_HFSHASH, &cnodehash);
-  mtx_init(&hfs_chash_slock, "hfs chash", NULL, MTX_DEF);
+__private_extern__ void hfs_chashinit(void) {
+	cnodehashtbl = hashinit(desiredvnodes, M_HFSHASH, &cnodehash);
+	mtx_init(&hfs_chash_slock, "hfs chash", NULL, MTX_DEF);
 }
 
 /*
  * Deinitialize cnode hash table.  Called on unloading the HFS module.
  */
-__private_extern__ void
-hfs_chashdestroy(void)
-{
-  mtx_destroy(&hfs_chash_slock);
-  hashdestroy(cnodehashtbl, M_HFSHASH, cnodehash);
+__private_extern__ void hfs_chashdestroy(void) {
+	mtx_destroy(&hfs_chash_slock);
+	hashdestroy(cnodehashtbl, M_HFSHASH, cnodehash);
 }
 
 /*
@@ -108,130 +104,138 @@ hfs_chashdestroy(void)
  * take a reference on the other vnode (fork) so that
  * the upcoming getnewvnode can not aquire it.
  */
-__private_extern__ struct cnode*
-hfs_chashget(struct cdev* dev,
-             ino_t inum,
-             int wantrsrc,
-             struct vnode** vpp,
-             struct vnode** rvpp)
-{
-  // proc_t* p = current_proc();
-  struct cnode* cp;
-  struct vnode* vp;
-  int error;
+__private_extern__ struct cnode *hfs_chashget(struct cdev *dev, ino_t inum,
+					      int wantrsrc, struct vnode **vpp,
+					      struct vnode **rvpp) {
+	// proc_t* p = current_proc();
+	struct cnode *cp;
+	struct vnode *vp;
+	int error;
 
-  *vpp = NULLVP;
-  *rvpp = NULLVP;
-  /*
-   * Go through the hash list
-   * If a cnode is in the process of being cleaned out or being
-   * allocated, wait for it to be finished and then try again.
-   */
-loop:
-  mtx_lock(&hfs_chash_slock);
-  for (cp = CNODEHASH(dev2udev(dev), inum)->lh_first; cp;
-       cp = cp->c_hash.le_next) {
-    if ((cp->c_fileid != inum) || (cp->c_dev != dev))
-      continue;
-    if (ISSET(cp->c_flag, C_ALLOC)) {
-      /*
-       * cnode is being created. Wait for it to finish.
-       */
-      SET(cp->c_flag, C_WALLOC);
-      mtx_unlock(&hfs_chash_slock);
-      (void)tsleep((caddr_t)cp, PINOD, "hfs_chashget-1", 0);
-      goto loop;
-    }
-    if (ISSET(cp->c_flag, C_TRANSIT)) {
-      /*
-       * cnode is getting reclaimed wait for
-       * the operation to complete and return
-       * error
-       */
-      SET(cp->c_flag, C_WTRANSIT);
-      mtx_unlock(&hfs_chash_slock);
-      (void)tsleep((caddr_t)cp, PINOD, "hfs_chashget-2", 0);
-      goto loop;
-    }
-    if (cp->c_flag & C_NOEXISTS)
-      continue;
+	*vpp = NULLVP;
+	*rvpp = NULLVP;
+	/*
+	 * Go through the hash list
+	 * If a cnode is in the process of being cleaned out or being
+	 * allocated, wait for it to be finished and then try again.
+	 */
+	while(1) {
+		mtx_lock(&hfs_chash_slock);
+		printf("pre cnodehash\n");
+		cp = CNODEHASH(dev2udev(dev), inum)->lh_first;
+		printf("post cnode hash. cp: %p\n", &cp);
+		
+		for (; cp; cp = cp->c_hash.le_next) {
+			printf("inside the loop\n");
+			if ((cp->c_fileid != inum) || (cp->c_dev != dev))
+				continue;
+			if (ISSET(cp->c_flag, C_ALLOC)) {
+				/*
+				 * cnode is being created. Wait for it to finish.
+				 */
+				SET(cp->c_flag, C_WALLOC);
+				mtx_unlock(&hfs_chash_slock);
+				(void)tsleep((caddr_t)cp, PINOD, "hfs_chashget-1", 0);
+				// goto loop;
+				break;
+			}
+			if (ISSET(cp->c_flag, C_TRANSIT)) {
+				/*
+				 * cnode is getting reclaimed wait for
+				 * the operation to complete and return
+				 * error
+				 */
+				SET(cp->c_flag, C_WTRANSIT);
+				mtx_unlock(&hfs_chash_slock);
+				(void)tsleep((caddr_t)cp, PINOD, "hfs_chashget-2", 0);
+				// goto loop;
+				break;
+			}
+			if (cp->c_flag & C_NOEXISTS)
+				continue;
 
-    /*
-     * Try getting the desired vnode first.  If
-     * it isn't available then take a reference
-     * on the other vnode.
-     */
-    vp = wantrsrc ? cp->c_rsrc_vp : cp->c_vp;
-    if (vp == NULLVP)
-      vp = wantrsrc ? cp->c_vp : cp->c_rsrc_vp;
-    if (vp == NULLVP)
-      panic("hfs_chashget: orphaned cnode in hash");
+			/*
+			 * Try getting the desired vnode first.  If
+			 * it isn't available then take a reference
+			 * on the other vnode.
+			 */
+			vp = wantrsrc ? cp->c_rsrc_vp : cp->c_vp;
+			if (vp == NULLVP)
+				vp = wantrsrc ? cp->c_vp : cp->c_rsrc_vp;
+			if (vp == NULLVP)
+				panic("hfs_chashget: orphaned cnode in hash");
 
-    VI_LOCK(vp);
-    mtx_unlock(&hfs_chash_slock);
-    if (vget(vp, LK_EXCLUSIVE | LK_INTERLOCK))
-      goto loop;
-    else if (cp->c_flag & C_NOEXISTS) {
-      /*
-       * While we were blocked the cnode got deleted.
-       */
-      vput(vp);
-      goto loop;
-    }
+			VI_LOCK(vp);
+			mtx_unlock(&hfs_chash_slock);
+			if (vget(vp, LK_EXCLUSIVE | LK_INTERLOCK)) {
+				// goto loop;
+				break;
+			}
+			else if (cp->c_flag & C_NOEXISTS) {
+				/*
+				 * While we were blocked the cnode got deleted.
+				 */
+				vput(vp);
+				// goto loop;
+				break;
+			}
 
-    if (VNODE_IS_RSRC(vp))
-      *rvpp = vp;
-    else
-      *vpp = vp;
-    /*
-     * Note that vget can block before aquiring the
-     * cnode lock.  So we need to check if the vnode
-     * we wanted was created while we blocked.
-     */
-    if (wantrsrc && *rvpp == NULL && cp->c_rsrc_vp) {
-      error = vget(cp->c_rsrc_vp, 0);
-      vput(*vpp); /* ref no longer needed */
-      *vpp = NULL;
-      if (error)
-        goto loop;
-      *rvpp = cp->c_rsrc_vp;
+			if (VNODE_IS_RSRC(vp))
+				*rvpp = vp;
+			else
+				*vpp = vp;
+			/*
+			 * Note that vget can block before aquiring the
+			 * cnode lock.  So we need to check if the vnode
+			 * we wanted was created while we blocked.
+			 */
+			if (wantrsrc && *rvpp == NULL && cp->c_rsrc_vp) {
+				error = vget(cp->c_rsrc_vp, 0);
+				vput(*vpp); /* ref no longer needed */
+				*vpp = NULL;
+				if (error) {
+				//	goto loop;
+					break;
+				}
+				*rvpp = cp->c_rsrc_vp;
 
-    } else if (!wantrsrc && *vpp == NULL && cp->c_vp) {
-      error = vget(cp->c_vp, 0);
-      vput(*rvpp); /* ref no longer needed */
-      *rvpp = NULL;
-      if (error)
-        goto loop;
-      *vpp = cp->c_vp;
-    }
-    return (cp);
-  }
-  mtx_unlock(&hfs_chash_slock);
-  return (NULL);
+			} else if (!wantrsrc && *vpp == NULL && cp->c_vp) {
+				error = vget(cp->c_vp, 0);
+				vput(*rvpp); /* ref no longer needed */
+				*rvpp = NULL;
+				if (error) {
+					// goto loop;
+					break;
+				}
+				*vpp = cp->c_vp;
+			}
+			return (cp);
+		}
+	}
+	printf("outside of the for loop.\n");
+	mtx_unlock(&hfs_chash_slock);
+	return (NULL);
 }
 
 /*
  * Insert a cnode into the hash table.
  */
-__private_extern__ void
-hfs_chashinsert(struct cnode* cp)
-{
-  if (cp->c_fileid == 0)
-    panic("hfs_chashinsert: trying to insert file id 0");
-  mtx_lock(&hfs_chash_slock);
-  LIST_INSERT_HEAD(CNODEHASH(dev2udev(cp->c_dev), cp->c_fileid), cp, c_hash);
-  mtx_unlock(&hfs_chash_slock);
+__private_extern__ void hfs_chashinsert(struct cnode *cp) {
+	if (cp->c_fileid == 0)
+		panic("hfs_chashinsert: trying to insert file id 0");
+	mtx_lock(&hfs_chash_slock);
+	LIST_INSERT_HEAD(CNODEHASH(dev2udev(cp->c_dev), cp->c_fileid), cp,
+			 c_hash);
+	mtx_unlock(&hfs_chash_slock);
 }
 
 /*
  * Remove a cnode from the hash table.
  */
-__private_extern__ void
-hfs_chashremove(struct cnode* cp)
-{
-  mtx_lock(&hfs_chash_slock);
-  LIST_REMOVE(cp, c_hash);
-  cp->c_hash.le_next = NULL;
-  cp->c_hash.le_prev = NULL;
-  mtx_unlock(&hfs_chash_slock);
+__private_extern__ void hfs_chashremove(struct cnode *cp) {
+	mtx_lock(&hfs_chash_slock);
+	LIST_REMOVE(cp, c_hash);
+	cp->c_hash.le_next = NULL;
+	cp->c_hash.le_prev = NULL;
+	mtx_unlock(&hfs_chash_slock);
 }

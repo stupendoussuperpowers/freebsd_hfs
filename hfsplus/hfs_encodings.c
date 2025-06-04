@@ -63,7 +63,7 @@ static int unicode_to_mac_roman(const UniChar* uni_str,
                                 UInt32 unicodeChars,
                                 Str31 hfs_str);
 
-static void hfs_converterinit(void) {
+void hfs_converterinit(void) {
   SLIST_INIT(&hfs_encoding_list);
   mtx_init(&hfs_encoding_list_slock, "hfs encoding list", NULL, MTX_DEF);
 

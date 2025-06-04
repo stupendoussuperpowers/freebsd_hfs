@@ -1124,6 +1124,25 @@ int hfs_volupdate(struct hfsmount *hfsmp, enum volop op, int inroot) {
 	return 0;
 }
 
+static int hfs_init(struct vfsconf *vfsp) {
+	printf("---hfs_init---\n");
+	static int done = 0;
+
+	if (done) 
+		return (0);
+
+	done = 1;
+
+	hfs_chashinit();
+	hfs_converterinit();
+//#if QUOTA
+//	dqinit();
+//#endif
+	(void)InitCatalogCache();
+
+	return (0);
+}
+
 //
 //  Should the above two function be in utils instead? I guess so?
 //  hfs_flushvolumeheaders
@@ -1131,13 +1150,14 @@ int hfs_volupdate(struct hfsmount *hfsmp, enum volop op, int inroot) {
 //
 
 static struct vfsops hfs_vfsops = {
-    .vfs_mount = hfs_mount,
-    .vfs_cmount = hfs_cmount,
-    .vfs_root = hfs_root,
-    .vfs_statfs = hfs_statfs,
-    .vfs_sync = hfs_sync,
-    .vfs_unmount = hfs_unmount,
-    .vfs_vget = hfs_vget,
+	.vfs_mount = hfs_mount,
+	.vfs_cmount = hfs_cmount,
+	.vfs_root = hfs_root,
+	.vfs_statfs = hfs_statfs,
+	.vfs_sync = hfs_sync,
+	.vfs_unmount = hfs_unmount,
+	.vfs_vget = hfs_vget,
+	.vfs_init = hfs_init,
 };
 
 VFS_SET(hfs_vfsops, hfs, 0);
