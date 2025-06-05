@@ -344,11 +344,10 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   /* copy 32 bytes of Finder info */
   bcopy(vhp->finderInfo, vcb->vcbFndrInfo, sizeof(vhp->finderInfo));
 
-  vcb->vcbAlBlSt =
-      0; /* hfs+ allocation blocks start at first block of volume */
-  if (!hfsmp->hfs_fs_ronly)
+  vcb->vcbAlBlSt = 0; /* hfs+ allocation blocks start at first block of volume */
+  if (!hfsmp->hfs_fs_ronly) {
     vcb->vcbWrCnt++; /* compensate for write of Volume Header on last flush */
-
+  }
   VCB_LOCK_INIT(vcb);
 
   /* Now fill in the Extended VCB info */
@@ -402,11 +401,11 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
 
   KASSERT(vcb->extentsRefNum != NULL, ("extentsRefNum is NULL."));
 
-  printf("extentRefNum BTOpenPath\n");
+  printf("[pre] extentRefNum BTOpenPath\n");
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeysPlus,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
-  printf("Post extentRefNum BTOpenPath\n");
+  printf("[post] extentRefNum BTOpenPath\n");
   if (retval) {
     printf("MacToVFSError: %d\n", retval);
     VOP_UNLOCK(vcb->extentsRefNum);
@@ -424,11 +423,9 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   cnattr.ca_blocks = vhp->catalogFile.totalBlocks;
 
 
-  printf("pre hfs_getnewvnode catalogFile\n");
   retval =
       hfs_getnewvnode(hfsmp, NULL, &cndesc, 0, &cnattr,
                       (struct cat_fork*)&vhp->catalogFile, &vcb->catalogRefNum);
-  printf("post catalog getnewnvode: %d\n", retval);
 
   SWAP_HFS_PLUS_FORK_DATA(&vhp->catalogFile);
   if (retval) {
@@ -436,12 +433,14 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
     goto ErrorExit;
   }
   
-  printf("catalog BTOpenPath\n");
+  printf("[pre] catalogRefNum BTOpenPath\n");
   
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareExtendedCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
-  printf("post catalog BTOpenPath\n");
+  
+  printf("[post] catalogRefNum BTOpenPath\n");
+ 
   if (retval) {
     printf("mactovfs retval: %d\n", retval);
     VOP_UNLOCK(vcb->catalogRefNum);
@@ -553,7 +552,7 @@ ErrorExit:
    * A fatal error occured and the volume cannot be mounted
    * release any resources that we aquired...
    */
-
+  printf("ErrorExit\n");
   InvalidateCatalogCache(vcb);
   ReleaseMetaFileVNode(vcb->allocationsRefNum);
   ReleaseMetaFileVNode(vcb->catalogRefNum);

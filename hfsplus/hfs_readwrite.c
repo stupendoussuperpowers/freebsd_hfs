@@ -1008,6 +1008,8 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 
 	logBlockSize = GetLogicalBlockSize(vp);
 	blockposition = (off_t)ap->a_bn * (off_t)logBlockSize;
+	printf("[LogBlockSize: %ld]\n", logBlockSize);
+	printf("[BlockPosition: %ld]\n", blockposition);
 
 	lockExtBtree = overflow_extents(fp);
 	if (lockExtBtree) {
@@ -1018,21 +1020,18 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			return (retval);
 	}
 
-	printf("abnp: %ld\n", *ap->a_bnp);
 	retval = MacToVFSError(MapFileBlockC(HFSTOVCB(hfsmp), (FCB *)fp, MAXPHYSIO, blockposition, ap->a_bnp, &bytesContAvail));
-	printf("abnp: %ld\n", *ap->a_bnp);
 	
-	if (lockExtBtree)
-		(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE,
-					  p);
-
+	if (lockExtBtree) {
+		(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
+	}
+	
 	if (retval == E_NONE) {
 		/* Adjust the mapping information for invalid file ranges: */
-		overlaptype =
-		    rl_scan(&fp->ff_invalidranges, blockposition,
-			    blockposition + MAXPHYSIO - 1, &invalid_range);
-		
-		printf("overlaptype: %d | rlnooverlap: %d\n", overlaptype, RL_NOOVERLAP);
+		overlaptype = rl_scan(&fp->ff_invalidranges, 
+				blockposition,
+				blockposition + MAXPHYSIO - 1, 
+				&invalid_range);
 
 		if (overlaptype != RL_NOOVERLAP) {
 			switch (overlaptype) {

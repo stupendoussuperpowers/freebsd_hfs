@@ -228,15 +228,10 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 
 	// it is now safe to call M_ExitOnError (err)
 	
-	printf("=== setBlockSizeProc ===\n");
 	err = setBlockSizeProc(btreePtr->fileRefNum, nodeRec.blockSize, 1);	
-	printf("=== setBlockSizeProc ===\n");
 	M_ExitOnError (err);
 
-
-	printf("=== getBlockProc ===\n");
 	err = getBlockProc(btreePtr->fileRefNum, kHeaderNodeNum, kGetBlock, &nodeRec);
-	printf("=== getBlockProc ===\n");
 
 	if (err != noErr)
 	{
@@ -251,10 +246,8 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 
 	///////////////////////////// verify header /////////////////////////////////
 	
-	printf("=== VerifyHeader ===\n");
 	err = VerifyHeader (filePtr, header);
 	M_ExitOnError (err);
-	printf("=== VerifyHeader ===\n");
 
 	///////////////////// Initalize fields from header //////////////////////////
 	
@@ -312,9 +305,7 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 	else
 	{
 
-		printf("=== setBlockSizeProc ===\n");
 		err = setBlockSizeProc(btreePtr->fileRefNum, btreePtr->nodeSize, 32);	//€€ we should try and get this down to 8	
-		printf("=== setBlockSizeProc ===\n");
 		M_ExitOnError (err);
 
 		/*
@@ -322,25 +313,18 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 		 * buffer cache to read the entire node
 		 */
 
-		printf("=== releaseBlockProc ===\n");
 		err = releaseBlockProc(btreePtr->fileRefNum, &nodeRec, kTrashBlock);
-		printf("=== releaseBlockProc ===\n");
 		++btreePtr->numReleaseNodes;
 		M_ExitOnError (err);
 
 
-		printf("=== GetNode ===\n");
-		printf("btreePtr->fileRefNum :%p\n", btreePtr->fileRefNum);
 		err = GetNode(btreePtr, kHeaderNodeNum, &nodeRec );		// calls CheckNode...
-		printf("=== GetNode ===\n");
 		M_ExitOnError (err);
 	}
 
 	//€€ total nodes * node size <= LEOF?
 
-	printf("=== ReleaseNode ===\n");
 	err = ReleaseNode (btreePtr, &nodeRec);
-	printf("=== ReleaseNode ===\n");
 	M_ExitOnError (err);
 
 	/*
@@ -373,7 +357,6 @@ ErrorExit:
 	filePtr->fcbBTCBPtr = nil;
 	(void) ReleaseNode (btreePtr, &nodeRec);
 	DisposePtr( (Ptr) btreePtr );
-	printf("Exiting BTOpenPath\n");
 	return err;
 }
 

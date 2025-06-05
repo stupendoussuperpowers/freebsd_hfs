@@ -77,9 +77,7 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 		printf("get blk\n");
 		bp = _GETBLK(vp, blockNum, block->blockSize, 0, 0);
 	} else {
-		printf("break bread\n");
 		printf("bp: %p | vp: %p | blockNum: %d | blockSize: %d\n", bp, vp, blockNum, block->blockSize);
-		printf("vp->v_data: %p\n", vp->v_data);
 		retval = bread(vp, blockNum, block->blockSize, NOCRED, &bp);
 		printf("bread retval: %d\n", retval);
 	}
@@ -87,8 +85,6 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 	// DBG_ASSERT(bp->b_data != NULL);
 	// DBG_ASSERT(bp->b_bcount == block->blockSize);
 	// DBG_ASSERT(bp->b_lblkno == blockNum);
-	
-	printf("pre checks\n");
 
 	if (bp == NULL)
 		retval = -1; // XXX need better error
@@ -144,8 +140,6 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 		block->blockHeader = NULL;
 		block->buffer = NULL;
 	}
-
-	printf("Exiting get btree block\n");
 
 	return (retval);
 }

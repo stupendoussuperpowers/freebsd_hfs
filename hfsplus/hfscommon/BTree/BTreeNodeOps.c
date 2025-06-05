@@ -205,9 +205,9 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 	nodePtr->blockSize = btreePtr->nodeSize;	// indicate the size of a node
 	
 	getNodeProc = btreePtr->getBlockProc;
-	printf("getNodeProc\n");
+	printf("[enter] getNodeProc\n");
 	err = getNodeProc(btreePtr->fileRefNum, nodeNum, kGetBlock, nodePtr);
-	printf("getNodeProc\n");
+	printf("[exit] getNodeProc\n");
 	if (err != noErr)
 	{
 		Panic ("GetNode: getNodeProc returned error.");

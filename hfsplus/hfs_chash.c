@@ -211,7 +211,6 @@ __private_extern__ struct cnode *hfs_chashget(struct cdev *dev, ino_t inum,
 		}
 		break;
 	}
-	printf("outside of the for loop.\n");
 	mtx_unlock(&hfs_chash_slock);
 	return (NULL);
 }

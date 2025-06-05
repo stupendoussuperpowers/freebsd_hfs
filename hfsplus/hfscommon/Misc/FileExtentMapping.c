@@ -639,9 +639,12 @@ OSErr MapFileBlockC (
 	off_t				tmpOff;
 
 	allocBlockSize = vcb->blockSize;
+	printf("!allocBlockSize: %u\n", allocBlockSize);
 	sectorSize = VCBTOHFS(vcb)->hfs_phys_block_size;
 	
 	err = SearchExtentFile(vcb, fcb, offset, &foundKey, foundData, &foundIndex, &hint, &nextFABN);
+
+
 	if (err == noErr) {
 		startBlock = foundData[foundIndex].startBlock;
 		firstFABN = nextFABN - foundData[foundIndex].blockCount;
@@ -651,6 +654,8 @@ OSErr MapFileBlockC (
 	{
 		return err;
 	}
+
+	printf("[offset: %ld | nextFABN: %d | firstFABN: %d | startBlock: %u ]\n", offset, nextFABN, firstFABN, startBlock);
 
 	//
 	//	Determine the end of the available space.  It will either be the end of the extent,
@@ -668,18 +673,25 @@ OSErr MapFileBlockC (
 	//	offset in sectors from start of the extent +
 	//      offset in sectors from start of allocation block space
 	//
-	temp = (daddr_t)((offset - (off_t)((off_t)(firstFABN) * (off_t)(allocBlockSize)))/sectorSize);
+	//
+	printf("temp-e arizona\n");
+
+	printf("[sectorsPerBlock: %d | allocBlockSize: %d | sectorSize: %d ]\n", sectorsPerBlock, allocBlockSize, sectorSize);
+
+	temp = (daddr_t)((offset - (off_t)((off_t)(firstFABN) * (off_t)(allocBlockSize)))/sectorSize);	
+	printf("!temp: %ld\n", temp);
 	temp += startBlock * sectorsPerBlock;
 
+	printf("!temp: %ld\n", temp);
 	/* Add in any volume offsets */
 	if (vcb->vcbSigWord == kHFSPlusSigWord)
 		temp += vcb->hfsPlusIOPosOffset / sectorSize;
 	else
 		temp += vcb->vcbAlBlSt;
 	
+	printf("!temp: %ld\n", temp);
 	//	Return the desired sector for file position "offset"
 	*startSector = temp;
-	
 	//
 	//	Determine the number of contiguous bytes until the end of the extent
 	//	(or the amount they asked for, whichever comes first).
