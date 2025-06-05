@@ -30,6 +30,9 @@ Inconsistent use of integer pointers likely due to the original code expecting 3
 
 Non-existent 'console_user' on FreeBSD.
 
+Using GEOM APIs. g_vfs_open(...)
+
+Current hang/crash is mostly because of EIO errors when reading vcb->catalogRefNum from the dmg. For 100m dmg, it crashes, for 512m dmg, it hangs.
 --- 
 TODO:
 

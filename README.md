@@ -1,6 +1,6 @@
 ## Porting HFS+ to FreeBSD.
 
-Glue code to get a filesystem working. Doesn't yet port features from XNU/HFS.
+Status: Ported APIs to modern FreeBSD. Getting Mounting to work
 
 XNU/HFS code ported from - [](https://github.com/apple-oss-distributions/hfs)
 
@@ -8,11 +8,11 @@ Generates a dynamic kernel mod which registers the filesystem.
 
 To run, load, or test mount -
 
-`./runtest <build | load | test_mount>`
+`./build`
 
-`./runtest` will run build, load, and then test_mount
+`./load`
 
-Doesn't yet completely support mounts, however it will not kernel panic anymore :)
+`./testmount` -- Requires an HFS/HFS+ image to be present at /dev/md10
 
 ## Structure
 
@@ -22,7 +22,9 @@ HFS+ related code: `hfsplus/`
 
 Original XNU source code: `xnu/`
 
-Stubs for macOSisms: `sys/` & `hfsplus/hfs_macos_defs.h`
+Stubs for macOSisms: `sys/` & `hfsplus/hfs_macos_defs.h`, `vfs/`
+
+Binaries: `disk_bin/`
 
 ## Changelog
 
