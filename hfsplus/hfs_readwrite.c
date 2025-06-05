@@ -63,6 +63,9 @@
 #include <sys/kdebug.h>
 #endif
 
+#include <geom/geom.h>
+#include <geom/geom_vfs.h>
+
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_endian.h>
 #include <hfsplus/hfs_quota.h>
@@ -1015,10 +1018,10 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			return (retval);
 	}
 
-	retval = MacToVFSError(MapFileBlockC(HFSTOVCB(hfsmp), (FCB *)fp,
-					     MAXPHYSIO, blockposition,
-					     ap->a_bnp, &bytesContAvail));
-
+	printf("abnp: %ld\n", *ap->a_bnp);
+	retval = MacToVFSError(MapFileBlockC(HFSTOVCB(hfsmp), (FCB *)fp, MAXPHYSIO, blockposition, ap->a_bnp, &bytesContAvail));
+	printf("abnp: %ld\n", *ap->a_bnp);
+	
 	if (lockExtBtree)
 		(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE,
 					  p);
@@ -1028,6 +1031,9 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 		overlaptype =
 		    rl_scan(&fp->ff_invalidranges, blockposition,
 			    blockposition + MAXPHYSIO - 1, &invalid_range);
+		
+		printf("overlaptype: %d | rlnooverlap: %d\n", overlaptype, RL_NOOVERLAP);
+
 		if (overlaptype != RL_NOOVERLAP) {
 			switch (overlaptype) {
 				case RL_MATCHINGOVERLAP:
@@ -1035,6 +1041,8 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 				case RL_OVERLAPSTARTSBEFORE:
 					/* There's no valid block for this byte
 					 * offset: */
+
+					printf("starts before, %ld\n", (daddr_t)-1);
 					*ap->a_bnp = (daddr_t)-1;
 					bytesContAvail = invalid_range->rl_end +
 							 1 - blockposition;
@@ -1049,6 +1057,7 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 						/* There's actually no valid
 						 * information to be had
 						 * starting here: */
+						printf("starts before, %ld\n", (daddr_t)-1);
 						*ap->a_bnp = (daddr_t)-1;
 						if ((fp->ff_size >
 						     (invalid_range->rl_end +
@@ -1091,7 +1100,8 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			*ap->a_runb = 0;
 #endif
 	};
-	printf("--- hfs_bmap ---\n");
+	printf("bn:%ld -> bnp:%ld\n", ap->a_bn, *ap->a_bnp);
+	printf("Exit --- hfs_bmap ---\n");
 	return (retval);
 }
 
@@ -2293,24 +2303,28 @@ struct vop_pageout_args /* {
 }
 #endif /* DARWIN */
 
-/*
+void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
+	printf("=== hfs_bstrategy ===\n");
+	printf("bo: %p | bp: %p \n", bo, bp);
+
+	KASSERT(bo->bo_private != NULL, ("bo_private is null."));
+	
+	struct vnode *devvp;
+	devvp = (struct vnode *) bo->bo_private;
+
+	KASSERT(devvp != NULL, ("devvp is null."));
+
+	printf("devvp: %p\n", devvp);
+	// g_vfs_strategy(bo, bp);
+	VOP_STRATEGY(devvp, bp);
+}
+	/*
  * Intercept B-Tree node writes to unswap them if necessary.
 #
 #vop_bwrite {
 #	IN struct buf *bp;
  */
-int
-#ifdef DARWIN
-hfs_bwrite(ap)
-struct vop_bwrite_args /* {
-	struct buf *a_bp;
-} */ *ap;
-{
-	register struct buf *bp = ap->a_bp;
-#else
-hfs_bwrite(struct buf *bp)
-{
-#endif /* DARWIN */
+int hfs_bwrite(struct buf *bp) {
 	int retval = 0;
 	register struct vnode *vp = bp->b_vp;
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -2339,22 +2353,7 @@ hfs_bwrite(struct buf *bp)
 		 * be all zeros */
 	}
 #endif
-#ifdef DARWIN
-	/* This buffer shouldn't be locked anymore but if it is clear it */
-	if (ISSET(bp->b_flags, B_LOCKED)) {
-#ifdef DARWIN_JOURNAL
-		// XXXdbg
-		if (VTOHFS(vp)->jnl) {
-			panic("hfs: CLEARING the lock bit on bp 0x%x\n", bp);
-		}
-#endif
-		CLR(bp->b_flags, B_LOCKED);
-		printf("hfs_bwrite: called with lock bit set\n");
-	}
-	retval = vn_bwrite(ap);
-#else  /* !DARWIN */
-	retval = buf_ops_bio.bop_write(bp); /* YYY need buf op stacking */
-#endif /* DARWIN */
 
+	retval = buf_ops_bio.bop_write(bp); /* YYY need buf op stacking */
 	return (retval);
 }

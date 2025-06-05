@@ -77,6 +77,7 @@
 #define suser_cred(cred, flags) priv_check_cred((cred), (flags))
 
 #ifdef __FreeBSD__
+void hfs_bstrategy(struct bufobj *, struct buf *);
 int hfs_bwrite(struct buf* bp);
 int hfs_truncate(struct vnode* vp,
                  off_t length,

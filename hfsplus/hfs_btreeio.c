@@ -47,7 +47,11 @@
 static int ClearBTNodes(struct vnode *vp, long blksize, off_t offset,
 			off_t amount);
 
-static struct buf_ops buf_ops_hfs_btree = {"buf_ops_hfs_btree", hfs_bwrite};
+static struct buf_ops buf_ops_hfs_btree = {
+	.bop_name = "buf_ops_hfs_btree", 
+	.bop_write = hfs_bwrite,
+	.bop_strategy = hfs_bstrategy,
+};
 
 OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize,
 			   ItemCount minBlockCount) {

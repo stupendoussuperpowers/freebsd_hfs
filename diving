@@ -1,0 +1,3 @@
+#!/bin/sh
+
+kgdb /usr/obj/usr/src/arm64.aarch64/sys/GENERIC/kernel.debug /var/crash/vmcore.last
