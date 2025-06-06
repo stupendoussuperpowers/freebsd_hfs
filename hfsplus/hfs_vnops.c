@@ -193,6 +193,7 @@ int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify,
 
 int hfs_btsync(struct vnode *vp, int sync_transaction)
 {
+	printf("\n[enter] hfs_btsync\n");
 	struct cnode *cp = VTOC(vp);
 	register struct buf *bp;
 	struct timeval tv;
@@ -209,6 +210,7 @@ loop:
 	struct bufobj v_bufobj = vp->v_bufobj;
 
 	for (bp = TAILQ_FIRST(&v_bufobj.bo_dirty.bv_hd); bp; bp = nbp) {
+		printf("[inside loop | bp: %p ]\n", bp);
 		nbp = TAILQ_NEXT(bp, b_bobufs);
 		if (_BUF_LOCK(bp, LK_EXCLUSIVE | LK_NOWAIT))
 			continue;
@@ -340,6 +342,41 @@ static int hfs_getattr(struct vop_getattr_args *ap) {
 	return (0);
 }
 
+static int hfs_lock1(struct vop_lock1_args *ap) {
+	/* {
+		struct vnode *a_vp;
+		int a_flags;
+		char *file;
+		int line;
+	} */
+	printf("[Enter] hfs_lock1 \n");
+	struct vnode *vp = ap->a_vp;
+	struct cnode *cp = VTOC(vp);
+
+	if (cp == NULL)
+		panic("hfs_lock: cnode in vnode is null\n");
+
+	printf("[Exit] hfs_lock1 \n");
+	return (lockmgr(&cp->c_lock, ap->a_flags, &vp->v_interlock));
+}
+
+static int hfs_unlock(struct vop_unlock_args *ap) {
+	 /* {
+		struct vnode *a_vp;
+		int a_flags;
+		proc_t *a_td;
+	} */
+	struct vnode *vp = ap->a_vp;
+	struct cnode *cp = VTOC(vp);
+
+	printf("[Exit] hfs_unlock \n");
+	if (cp == NULL)
+		panic("hfs_unlock: cnode in vnode is null\n");
+
+	printf("[Exit] hfs_unlock \n");
+	return (lockmgr(&cp->c_lock, LK_RELEASE, &vp->v_interlock));
+}
+
 struct vop_vector hfs_vnodeops = {
 	.vop_default =		&default_vnodeops,
 
@@ -363,7 +400,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_ioctl =		VOP_EOPNOTSUPP,
 	.vop_link =		VOP_EOPNOTSUPP,
 	.vop_listextattr =	VOP_EOPNOTSUPP,
-	.vop_lock1 =		VOP_EOPNOTSUPP,
+	.vop_lock1 =		hfs_lock1,
 	.vop_lookup =		VOP_EOPNOTSUPP,
 	.vop_mkdir =		VOP_EOPNOTSUPP,
 	.vop_mknod =		VOP_EOPNOTSUPP,
@@ -385,7 +422,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_setlabel =		VOP_EOPNOTSUPP,
 	.vop_strategy =		hfs_strategy,
 	.vop_symlink =		VOP_EOPNOTSUPP,
-	.vop_unlock =		VOP_EOPNOTSUPP,
+	.vop_unlock =		hfs_unlock,
 	.vop_whiteout =		VOP_EOPNOTSUPP,
 	.vop_write =		VOP_EOPNOTSUPP,
 	.vop_vptofh =		VOP_EOPNOTSUPP,

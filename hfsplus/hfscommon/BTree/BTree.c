@@ -2,13 +2,13 @@
  * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -28,7 +28,7 @@
 
 	Written by:	Gordon Sheridan and Bill Bruffey
 
-	Copyright:	© 1992-1999 by Apple Computer, Inc., all rights reserved.
+	Copyright:	ï¿½ 1992-1999 by Apple Computer, Inc., all rights reserved.
 
 	File Ownership:
 
@@ -52,7 +52,7 @@
 	   <MOSXS>	 4/11/98	djb		Add RequireFileLock checking to all external entry points.
 
 	   <MOSXS>	03/23/98	djb		In BTOpenPath use kTrashBlock option when releasing the header so
-	   								that we get a full node when we call GetNode. 
+									that we get a full node when we call GetNode.
 
 	   <CS9>	12/12/97	djb		Radar #2202682, BTIterateRecord with kBTreeCurrentRecord was not
 									checking if we had a record and could call BlockMove with an
@@ -146,18 +146,15 @@
 
 #include "../headers/BTreesPrivate.h"
 
-/* 
+/*
  * The amount that the BTree header leaf count can be wrong before we assume
  * it is in an infinite loop.
  */
-#define	kNumLeafRecSlack 10		
+#define kNumLeafRecSlack 10
 
 //////////////////////////////////// Globals ////////////////////////////////////
 
-
 /////////////////////////// BTree Module Entry Points ///////////////////////////
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTOpenPath	-	Open a file for access as a B*Tree.
@@ -179,134 +176,122 @@ Result:		noErr				- success
 			!= noErr			- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcPtr getBlockProc, ReleaseBlockProcPtr releaseBlockProc, SetEndOfForkProcPtr setEndOfForkProc, SetBlockSizeProcPtr setBlockSizeProc) 
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
-	BTHeaderRec				*header;
-	NodeRec					nodeRec;
+OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc, GetBlockProcPtr getBlockProc, ReleaseBlockProcPtr releaseBlockProc,
+		    SetEndOfForkProcPtr setEndOfForkProc, SetBlockSizeProcPtr setBlockSizeProc) {
+
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	BTHeaderRec *header;
+	NodeRec nodeRec;
 
 	////////////////////// Preliminary Error Checking ///////////////////////////
 
-	if ( filePtr == nil				||
-		 getBlockProc == nil		||
-		 releaseBlockProc == nil	||
-		 setEndOfForkProc == nil	||
-		 setBlockSizeProc == nil )
-	{
-		return  paramErr;
+	if (filePtr == nil || getBlockProc == nil || releaseBlockProc == nil || setEndOfForkProc == nil || setBlockSizeProc == nil) {
+		return paramErr;
 	}
 
-	if ( filePtr->fcbBTCBPtr != nil )			// already has a BTreeCB
+	if (filePtr->fcbBTCBPtr != nil) // already has a BTreeCB
 		return noErr;
 
-												// is file large enough to contain header node?
-	if ( filePtr->fcbEOF < kMinNodeSize )
-		return fsBTInvalidFileErr;							//€€ or E_BadHeader?
+	// is file large enough to contain header node?
+	if (filePtr->fcbEOF < kMinNodeSize)
+		return fsBTInvalidFileErr; // ï¿½ï¿½ or E_BadHeader?
 
 	//////////////////////// Allocate Control Block /////////////////////////////
-	btreePtr = (BTreeControlBlock*) NewPtrSysClear( sizeof( BTreeControlBlock ) );
-	if (btreePtr == nil)
-	{
-		Panic ("BTOpen: no memory for btreePtr.");
-		return	memFullErr;
+	btreePtr = (BTreeControlBlock *)NewPtrSysClear(sizeof(BTreeControlBlock));
+	if (btreePtr == nil) {
+		Panic("BTOpen: no memory for btreePtr.");
+		return memFullErr;
 	}
 
-	btreePtr->getBlockProc		= getBlockProc;
-	btreePtr->releaseBlockProc	= releaseBlockProc;
-	btreePtr->setEndOfForkProc	= setEndOfForkProc;
-	btreePtr->keyCompareProc	= keyCompareProc;
+	btreePtr->getBlockProc = getBlockProc;
+	btreePtr->releaseBlockProc = releaseBlockProc;
+	btreePtr->setEndOfForkProc = setEndOfForkProc;
+	btreePtr->keyCompareProc = keyCompareProc;
 
 	/////////////////////////// Read Header Node ////////////////////////////////
-	nodeRec.buffer				= nil;				// so we can call ReleaseNode
-	btreePtr->fileRefNum		= GetFileRefNumFromFCB(filePtr);
-	filePtr->fcbBTCBPtr			= (Ptr) btreePtr;	// attach btree cb to file
+	nodeRec.buffer = nil; // so we can call ReleaseNode
+	btreePtr->fileRefNum = GetFileRefNumFromFCB(filePtr);
+	filePtr->fcbBTCBPtr = (Ptr)btreePtr; // attach btree cb to file
 	/* The minimum node size is the physical block size */
-	
+
 	nodeRec.blockSize = VTOHFS(btreePtr->fileRefNum)->hfs_phys_block_size;
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
 
 	// it is now safe to call M_ExitOnError (err)
-	
-	err = setBlockSizeProc(btreePtr->fileRefNum, nodeRec.blockSize, 1);	
-	M_ExitOnError (err);
+
+	err = setBlockSizeProc(btreePtr->fileRefNum, nodeRec.blockSize, 1);
+	M_ExitOnError(err);
 
 	err = getBlockProc(btreePtr->fileRefNum, kHeaderNodeNum, kGetBlock, &nodeRec);
 
-	if (err != noErr)
-	{
+	if (err != noErr) {
 		nodeRec.buffer = nil;
-		nodeRec.blockHeader	= nil;
+		nodeRec.blockHeader = nil;
 		Panic("BTOpen: getNodeProc returned error getting header node.");
 		goto ErrorExit;
 	}
 	++btreePtr->numGetNodes;
-	header = (BTHeaderRec*) ((u_long)nodeRec.buffer + sizeof(BTNodeDescriptor));
-
+	header = (BTHeaderRec *)((u_long)nodeRec.buffer + sizeof(BTNodeDescriptor));
 
 	///////////////////////////// verify header /////////////////////////////////
-	
-	err = VerifyHeader (filePtr, header);
-	M_ExitOnError (err);
+	printf("[pre] VerifyHeader\n");
+	err = VerifyHeader(filePtr, header);
+	M_ExitOnError(err);
+	printf("[post] VerifyHeader\n");
 
 	///////////////////// Initalize fields from header //////////////////////////
-	
-    PanicIf ( (FCBTOVCB(filePtr)->vcbSigWord != 0x4244) && (header->nodeSize == 512), "earTOpenPath: wrong node size for HFS+ volume!");	// 0x4244 = 'BD'
-	btreePtr->treeDepth			= header->treeDepth;
-	btreePtr->rootNode			= header->rootNode;
-	btreePtr->leafRecords		= header->leafRecords;
-	btreePtr->firstLeafNode		= header->firstLeafNode;
-	btreePtr->lastLeafNode		= header->lastLeafNode;
-	btreePtr->nodeSize			= header->nodeSize;
-	btreePtr->maxKeyLength		= header->maxKeyLength;
-	btreePtr->totalNodes		= header->totalNodes;
-	btreePtr->freeNodes			= header->freeNodes;
-	// ignore					  header->clumpSize;	//€€ rename this field?
-	btreePtr->btreeType			= header->btreeType;
 
-	btreePtr->attributes		= header->attributes;
+	PanicIf((FCBTOVCB(filePtr)->vcbSigWord != 0x4244) && (header->nodeSize == 512), "earTOpenPath: wrong node size for HFS+ volume!"); // 0x4244 = 'BD'
+	btreePtr->treeDepth = header->treeDepth;
+	btreePtr->rootNode = header->rootNode;
+	btreePtr->leafRecords = header->leafRecords;
+	btreePtr->firstLeafNode = header->firstLeafNode;
+	btreePtr->lastLeafNode = header->lastLeafNode;
+	btreePtr->nodeSize = header->nodeSize;
+	btreePtr->maxKeyLength = header->maxKeyLength;
+	btreePtr->totalNodes = header->totalNodes;
+	btreePtr->freeNodes = header->freeNodes;
+	// ignore					  header->clumpSize;	//ï¿½ï¿½ rename this field?
+	btreePtr->btreeType = header->btreeType;
 
-	if ( btreePtr->maxKeyLength > 40 )
-		btreePtr->attributes |= (kBTBigKeysMask + kBTVariableIndexKeysMask);	//€€ we need a way to save these attributes
+	btreePtr->attributes = header->attributes;
+
+	if (btreePtr->maxKeyLength > 40)
+		btreePtr->attributes |= (kBTBigKeysMask + kBTVariableIndexKeysMask); // ï¿½ï¿½ we need a way to save these attributes
 
 	/////////////////////// Initialize dynamic fields ///////////////////////////
 
-	btreePtr->version			= kBTreeVersion;
-	btreePtr->flags				= 0;
-	btreePtr->writeCount		= 1;
+	btreePtr->version = kBTreeVersion;
+	btreePtr->flags = 0;
+	btreePtr->writeCount = 1;
 
 	/////////////////////////// Check Header Node ///////////////////////////////
 
 	// set kBadClose attribute bit, and UpdateNode
 
 	/* b-tree node size must be at least as big as the physical block size */
-	if (btreePtr->nodeSize < nodeRec.blockSize)
-	{
+	if (btreePtr->nodeSize < nodeRec.blockSize) {
 		/*
 		 * If this tree has any records or the media is writeable then
 		 * we cannot mount using the current physical block size.
 		 */
-		if (btreePtr->leafRecords > 0 ||
-		    VTOHFS(btreePtr->fileRefNum)->hfs_media_writeable)		
-		{
+		if (btreePtr->leafRecords > 0 || VTOHFS(btreePtr->fileRefNum)->hfs_media_writeable) {
 			err = fsBTBadNodeSize;
 			goto ErrorExit;
 		}
 	}
 
 	// if nodeSize Matches then we don't need to release, just CheckNode
-	if ( btreePtr->nodeSize == nodeRec.blockSize )
-	{
-		err = CheckNode (btreePtr, nodeRec.buffer);
+	if (btreePtr->nodeSize == nodeRec.blockSize) {
+		err = CheckNode(btreePtr, nodeRec.buffer);
 		if (err)
 			VTOVCB(btreePtr->fileRefNum)->vcbFlags |= kHFS_DamagedVolume;
-		M_ExitOnError (err);
-	}
-	else
-	{
+		M_ExitOnError(err);
+	} else {
 
-		err = setBlockSizeProc(btreePtr->fileRefNum, btreePtr->nodeSize, 32);	//€€ we should try and get this down to 8	
-		M_ExitOnError (err);
+		err = setBlockSizeProc(btreePtr->fileRefNum, btreePtr->nodeSize, 32); // ï¿½ï¿½ï¿½we should try and get this down to 8
+		M_ExitOnError(err);
 
 		/*
 		 * Need to use kTrashBlock option to force the
@@ -315,17 +300,16 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 
 		err = releaseBlockProc(btreePtr->fileRefNum, &nodeRec, kTrashBlock);
 		++btreePtr->numReleaseNodes;
-		M_ExitOnError (err);
+		M_ExitOnError(err);
 
-
-		err = GetNode(btreePtr, kHeaderNodeNum, &nodeRec );		// calls CheckNode...
-		M_ExitOnError (err);
+		err = GetNode(btreePtr, kHeaderNodeNum, &nodeRec); // calls CheckNode...
+		M_ExitOnError(err);
 	}
 
-	//€€ total nodes * node size <= LEOF?
+	// ï¿½ï¿½ total nodes * node size <= LEOF?
 
-	err = ReleaseNode (btreePtr, &nodeRec);
-	M_ExitOnError (err);
+	err = ReleaseNode(btreePtr, &nodeRec);
+	M_ExitOnError(err);
 
 	/*
 	 * Under Mac OS, b-tree nodes can be non-contiguous on disk when the
@@ -338,29 +322,26 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc,GetBlockProcP
 	 * contiguous on disk.
 	 */
 #ifdef DARWIN_JOURNAL
-	if ( FCBTOHFS(filePtr)->jnl && !NodesAreContiguous(FCBTOVCB(filePtr), filePtr, btreePtr->nodeSize) ) {
+	if (FCBTOHFS(filePtr)->jnl && !NodesAreContiguous(FCBTOVCB(filePtr), filePtr, btreePtr->nodeSize)) {
 		return fsBTInvalidNodeErr;
 	}
 #endif
 
 	//////////////////////////////// Success ////////////////////////////////////
 
-	//€€ align LEOF to multiple of node size?	- just on close
+	// ï¿½ï¿½ align LEOF to multiple of node size?	- just on close
 
 	return noErr;
-
 
 	/////////////////////// Error - Clean up and Exit ///////////////////////////
 
 ErrorExit:
 
 	filePtr->fcbBTCBPtr = nil;
-	(void) ReleaseNode (btreePtr, &nodeRec);
-	DisposePtr( (Ptr) btreePtr );
+	(void)ReleaseNode(btreePtr, &nodeRec);
+	DisposePtr((Ptr)btreePtr);
 	return err;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTClosePath	-	Flush BTree Header and Deallocate Memory for BTree.
@@ -377,12 +358,11 @@ Result:		noErr			- success
 			!= noErr		- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	BTClosePath			(FCB					*filePtr)
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
+OSStatus BTClosePath(FCB *filePtr) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
 	if (btreePtr == nil)
 		return fsBTInvalidFileErr;
@@ -391,23 +371,21 @@ OSStatus	BTClosePath			(FCB					*filePtr)
 
 	////////////////////// Check for other BTree Paths //////////////////////////
 
-	btreePtr->attributes &= ~kBTBadCloseMask;		// clear "bad close" attribute bit
-	err = UpdateHeader (btreePtr, true);
-	M_ExitOnError (err);
+	btreePtr->attributes &= ~kBTBadCloseMask; // clear "bad close" attribute bit
+	err = UpdateHeader(btreePtr, true);
+	M_ExitOnError(err);
 
-	DisposePtr( (Ptr) btreePtr );
+	DisposePtr((Ptr)btreePtr);
 	filePtr->fcbBTCBPtr = nil;
 
-	return	noErr;
+	return noErr;
 
 	/////////////////////// Error - Clean Up and Exit ///////////////////////////
 
 ErrorExit:
 
-	return	err;
+	return err;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTSearchRecord	-	Search BTree for a record with a matching key.
@@ -438,32 +416,30 @@ Result:		noErr			- success, record contains copy of record found
 			!= noErr		- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	BTSearchRecord		(FCB						*filePtr,
-								 BTreeIterator				*searchIterator,
-								 FSBufferDescriptor			*record,
-								 UInt16						*recordLen,
-								 BTreeIterator				*resultIterator )
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
-	TreePathTable			treePathTable;
-	UInt32					nodeNum;
-	BlockDescriptor			node;
-	UInt16					index;
-	BTreeKeyPtr				keyPtr;
-	RecordPtr				recordPtr;
-	UInt16					len;
-	Boolean					foundRecord;
-	Boolean					validHint;
+OSStatus BTSearchRecord(FCB *filePtr, BTreeIterator *searchIterator, FSBufferDescriptor *record, UInt16 *recordLen, BTreeIterator *resultIterator) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	TreePathTable treePathTable;
+	UInt32 nodeNum;
+	BlockDescriptor node;
+	UInt16 index;
+	BTreeKeyPtr keyPtr;
+	RecordPtr recordPtr;
+	UInt16 len;
+	Boolean foundRecord;
+	Boolean validHint;
 
-	if (filePtr == nil)									return	paramErr;
-	if (searchIterator == nil)							return	paramErr;
+	if (filePtr == nil)
+		return paramErr;
+	if (searchIterator == nil)
+		return paramErr;
 
 	node.buffer = nil;
 	node.blockHeader = nil;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	if (btreePtr == nil)								return	fsBTInvalidFileErr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
+	if (btreePtr == nil)
+		return fsBTInvalidFileErr;
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
@@ -471,81 +447,72 @@ OSStatus	BTSearchRecord		(FCB						*filePtr,
 
 	////////////////////////////// Take A Hint //////////////////////////////////
 
-	err = IsItAHint (btreePtr, searchIterator, &validHint);
-	M_ExitOnError (err);
+	err = IsItAHint(btreePtr, searchIterator, &validHint);
+	M_ExitOnError(err);
 
-	if (validHint)
-	{
+	if (validHint) {
 		nodeNum = searchIterator->hint.nodeNum;
-		
-		err = GetNode (btreePtr, nodeNum, &node);
-		if( err == noErr )
-		{
-			if ( ((BTNodeDescriptor*) node.buffer)->kind == kBTLeafNode &&
-				 ((BTNodeDescriptor*) node.buffer)->numRecords	>  0 )
-			{
-				foundRecord = SearchNode (btreePtr, node.buffer, &searchIterator->key, &index);
 
-				//€€ if !foundRecord, we could still skip tree search if ( 0 < index < numRecords )
+		err = GetNode(btreePtr, nodeNum, &node);
+		if (err == noErr) {
+			if (((BTNodeDescriptor *)node.buffer)->kind == kBTLeafNode && ((BTNodeDescriptor *)node.buffer)->numRecords > 0) {
+				foundRecord = SearchNode(btreePtr, node.buffer, &searchIterator->key, &index);
+
+				// ï¿½ï¿½ if !foundRecord, we could still skip tree search if ( 0 < index < numRecords )
 			}
 
-			if (foundRecord == false)
-			{
-				err = ReleaseNode (btreePtr, &node);
-				M_ExitOnError (err);
-			}
-			else
-			{
+			if (foundRecord == false) {
+				err = ReleaseNode(btreePtr, &node);
+				M_ExitOnError(err);
+			} else {
 				++btreePtr->numValidHints;
 			}
 		}
-		
-		if( foundRecord == false )
-			(void) BTInvalidateHint( searchIterator );
-	}
 
+		if (foundRecord == false)
+			(void)BTInvalidateHint(searchIterator);
+	}
 
 	//////////////////////////// Search The Tree ////////////////////////////////
 
-	if (foundRecord == false)
-	{
-		err = SearchTree ( btreePtr, &searchIterator->key, treePathTable, &nodeNum, &node, &index);
-		switch (err)
-		{
-			case noErr:			foundRecord = true;				break;
-			case fsBTRecordNotFoundErr:									break;
-			default:				goto ErrorExit;
+	if (foundRecord == false) {
+		err = SearchTree(btreePtr, &searchIterator->key, treePathTable, &nodeNum, &node, &index);
+		switch (err) {
+			case noErr:
+				foundRecord = true;
+				break;
+			case fsBTRecordNotFoundErr:
+				break;
+			default:
+				goto ErrorExit;
 		}
 	}
-
 
 	//////////////////////////// Get the Record /////////////////////////////////
 
-	if (foundRecord == true)
-	{
-		//XXX Should check for errors! Or BlockMove could choke on recordPtr!!!
-		GetRecordByIndex (btreePtr, node.buffer, index, &keyPtr, &recordPtr, &len);
+	if (foundRecord == true) {
+		// XXX Should check for errors! Or BlockMove could choke on recordPtr!!!
+		GetRecordByIndex(btreePtr, node.buffer, index, &keyPtr, &recordPtr, &len);
 
-		if (recordLen != nil)			*recordLen = len;
+		if (recordLen != nil)
+			*recordLen = len;
 
-		if (record != nil)
-		{
+		if (record != nil) {
 			ByteCount recordSize;
 
 			recordSize = record->itemCount * record->itemSize;
-			
-			if (len > recordSize)	len = recordSize;
 
-			BlockMoveData (recordPtr, record->bufferAddress, len);
+			if (len > recordSize)
+				len = recordSize;
+
+			BlockMoveData(recordPtr, record->bufferAddress, len);
 		}
 	}
 
-
 	/////////////////////// Success - Update Iterator ///////////////////////////
 
-	if (resultIterator != nil)
-	{
-		resultIterator->hint.writeCount	= btreePtr->writeCount;
+	if (resultIterator != nil) {
+		resultIterator->hint.writeCount = btreePtr->writeCount;
 		resultIterator->hint.nodeNum = nodeNum;
 		resultIterator->hint.index = index;
 #if DEBUG_BUILD
@@ -556,17 +523,18 @@ OSStatus	BTSearchRecord		(FCB						*filePtr,
 #endif
 		// copy the key in the BTree when found rather than searchIterator->key to get proper case/diacriticals
 		if (foundRecord == true)
-			BlockMoveData ((Ptr)keyPtr, (Ptr)&resultIterator->key, CalcKeySize(btreePtr, keyPtr));
+			BlockMoveData((Ptr)keyPtr, (Ptr)&resultIterator->key, CalcKeySize(btreePtr, keyPtr));
 		else
-			BlockMoveData ((Ptr)&searchIterator->key, (Ptr)&resultIterator->key, CalcKeySize(btreePtr, &searchIterator->key));
+			BlockMoveData((Ptr)&searchIterator->key, (Ptr)&resultIterator->key, CalcKeySize(btreePtr, &searchIterator->key));
 	}
 
-	err = ReleaseNode (btreePtr, &node);
-	M_ExitOnError (err);
+	err = ReleaseNode(btreePtr, &node);
+	M_ExitOnError(err);
 
-	if (foundRecord == false)	return	fsBTRecordNotFoundErr;
-	else						return	noErr;
-
+	if (foundRecord == false)
+		return fsBTRecordNotFoundErr;
+	else
+		return noErr;
 
 	/////////////////////// Error - Clean Up and Exit ///////////////////////////
 
@@ -575,26 +543,23 @@ ErrorExit:
 	if (recordLen != nil)
 		*recordLen = 0;
 
-	if (resultIterator != nil)
-	{
-		resultIterator->hint.writeCount	= 0;
-		resultIterator->hint.nodeNum	= 0;
-		resultIterator->hint.index		= 0;
-		resultIterator->hint.reserved1	= 0;
-		resultIterator->hint.reserved2	= 0;
+	if (resultIterator != nil) {
+		resultIterator->hint.writeCount = 0;
+		resultIterator->hint.nodeNum = 0;
+		resultIterator->hint.index = 0;
+		resultIterator->hint.reserved1 = 0;
+		resultIterator->hint.reserved2 = 0;
 
-		resultIterator->version			= 0;
-		resultIterator->reserved		= 0;
-		resultIterator->key.length16	= 0;	// zero out two bytes to cover both types of keys
+		resultIterator->version = 0;
+		resultIterator->reserved = 0;
+		resultIterator->key.length16 = 0; // zero out two bytes to cover both types of keys
 	}
 
-	if ( err == fsBTEmptyErr )
+	if (err == fsBTEmptyErr)
 		err = fsBTRecordNotFoundErr;
 
 	return err;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTIterateRecord	-	Find the first, next, previous, or last record.
@@ -614,116 +579,94 @@ Result:		noErr			- success
 			!= noErr		- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	BTIterateRecord		(FCB						*filePtr,
-								 BTreeIterationOperation	 operation,
-								 BTreeIterator				*iterator,
-								 FSBufferDescriptor			*record,
-								 UInt16						*recordLen )
-{
-	OSStatus					err;
-	BTreeControlBlockPtr		btreePtr;
-	BTreeKeyPtr					keyPtr;
-	RecordPtr					recordPtr;
-	UInt16						len;
+OSStatus BTIterateRecord(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 *recordLen) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	BTreeKeyPtr keyPtr;
+	RecordPtr recordPtr;
+	UInt16 len;
 
-	Boolean						foundRecord;
-	UInt32						nodeNum;
+	Boolean foundRecord;
+	UInt32 nodeNum;
 
-	BlockDescriptor				left,		node,		right;
-	UInt16						index;
-
+	BlockDescriptor left, node, right;
+	UInt16 index;
 
 	////////////////////////// Priliminary Checks ///////////////////////////////
 
-	left.buffer		  = nil;
-	left.blockHeader  = nil;
-	right.buffer	  = nil;
+	left.buffer = nil;
+	left.blockHeader = nil;
+	right.buffer = nil;
 	right.blockHeader = nil;
-	node.buffer		  = nil;
-	node.blockHeader  = nil;
+	node.buffer = nil;
+	node.blockHeader = nil;
 
-
-	if (filePtr == nil)
-	{
-		return	paramErr;
+	if (filePtr == nil) {
+		return paramErr;
 	}
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	if (btreePtr == nil)
-	{
-		return	fsBTInvalidFileErr;			//€€ handle properly
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
+	if (btreePtr == nil) {
+		return fsBTInvalidFileErr; // ï¿½ï¿½ handle properly
 	}
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
-	if ((operation != kBTreeFirstRecord)	&&
-		(operation != kBTreeNextRecord)		&&
-		(operation != kBTreeCurrentRecord)	&&
-		(operation != kBTreePrevRecord)		&&
-		(operation != kBTreeLastRecord))
-	{
+	if ((operation != kBTreeFirstRecord) && (operation != kBTreeNextRecord) && (operation != kBTreeCurrentRecord) && (operation != kBTreePrevRecord) &&
+	    (operation != kBTreeLastRecord)) {
 		err = fsInvalidIterationMovmentErr;
 		goto ErrorExit;
 	}
 
 	/////////////////////// Find First or Last Record ///////////////////////////
 
-	if ((operation == kBTreeFirstRecord) || (operation == kBTreeLastRecord))
-	{
-		if (operation == kBTreeFirstRecord)		nodeNum = btreePtr->firstLeafNode;
-		else									nodeNum = btreePtr->lastLeafNode;
+	if ((operation == kBTreeFirstRecord) || (operation == kBTreeLastRecord)) {
+		if (operation == kBTreeFirstRecord)
+			nodeNum = btreePtr->firstLeafNode;
+		else
+			nodeNum = btreePtr->lastLeafNode;
 
-		if (nodeNum == 0)
-		{
+		if (nodeNum == 0) {
 			err = fsBTEmptyErr;
 			goto ErrorExit;
 		}
 
-		err = GetNode (btreePtr, nodeNum, &node);
-		M_ExitOnError (err);
+		err = GetNode(btreePtr, nodeNum, &node);
+		M_ExitOnError(err);
 
-		if ( ((NodeDescPtr) node.buffer)->kind != kBTLeafNode ||
-			 ((NodeDescPtr) node.buffer)->numRecords <=  0 )
-		{
-			err = ReleaseNode (btreePtr, &node);
-			M_ExitOnError (err);
+		if (((NodeDescPtr)node.buffer)->kind != kBTLeafNode || ((NodeDescPtr)node.buffer)->numRecords <= 0) {
+			err = ReleaseNode(btreePtr, &node);
+			M_ExitOnError(err);
 
 			err = fsBTInvalidNodeErr;
 			MARK_VOLUMEDAMAGED(filePtr);
 			goto ErrorExit;
 		}
 
-		if (operation == kBTreeFirstRecord)		index = 0;
-		else									index = ((BTNodeDescriptor*) node.buffer)->numRecords - 1;
+		if (operation == kBTreeFirstRecord)
+			index = 0;
+		else
+			index = ((BTNodeDescriptor *)node.buffer)->numRecords - 1;
 
-		goto CopyData;						//€€ is there a cleaner way?
+		goto CopyData; // ï¿½ï¿½ is there a cleaner way?
 	}
-
 
 	//////////////////////// Find Iterator Position /////////////////////////////
 
-	err = FindIteratorPosition (btreePtr, iterator,
-								&left, &node, &right, &nodeNum, &index, &foundRecord);
-	M_ExitOnError (err);
-
+	err = FindIteratorPosition(btreePtr, iterator, &left, &node, &right, &nodeNum, &index, &foundRecord);
+	M_ExitOnError(err);
 
 	///////////////////// Find Next Or Previous Record //////////////////////////
 
-	if (operation == kBTreePrevRecord)
-	{
-		if (index > 0)
-		{
+	if (operation == kBTreePrevRecord) {
+		if (index > 0) {
 			--index;
-		}
-		else
-		{
-			if (left.buffer == nil)
-			{
-				nodeNum = ((NodeDescPtr) node.buffer)->bLink;
-				if ( nodeNum > 0)
-				{
-					err = GetNode (btreePtr, nodeNum, &left);
-					M_ExitOnError (err);
+		} else {
+			if (left.buffer == nil) {
+				nodeNum = ((NodeDescPtr)node.buffer)->bLink;
+				if (nodeNum > 0) {
+					err = GetNode(btreePtr, nodeNum, &left);
+					M_ExitOnError(err);
 				} else {
 					err = fsBTStartOfIterationErr;
 					goto ErrorExit;
@@ -734,40 +677,30 @@ OSStatus	BTIterateRecord		(FCB						*filePtr,
 				err = ReleaseNode(btreePtr, &right);
 				M_ExitOnError(err);
 			}
-			right		= node;
-			node		= left;
-			left.buffer	= nil;
-			index 		= ((NodeDescPtr) node.buffer)->numRecords -1;
+			right = node;
+			node = left;
+			left.buffer = nil;
+			index = ((NodeDescPtr)node.buffer)->numRecords - 1;
 		}
-	}
-	else if (operation == kBTreeNextRecord)
-	{
-		if ((foundRecord != true) &&
-			(((NodeDescPtr) node.buffer)->fLink == 0) &&
-			(index == ((NodeDescPtr) node.buffer)->numRecords))
-		{
+	} else if (operation == kBTreeNextRecord) {
+		if ((foundRecord != true) && (((NodeDescPtr)node.buffer)->fLink == 0) && (index == ((NodeDescPtr)node.buffer)->numRecords)) {
 			err = fsBTEndOfIterationErr;
 			goto ErrorExit;
-		} 
-	
+		}
+
 		// we did not find the record but the index is already positioned correctly
-		if ((foundRecord == false) && (index != ((NodeDescPtr) node.buffer)->numRecords)) 
+		if ((foundRecord == false) && (index != ((NodeDescPtr)node.buffer)->numRecords))
 			goto CopyData;
 
 		// we found the record OR we have to look in the next node
-		if (index < ((NodeDescPtr) node.buffer)->numRecords -1)
-		{
+		if (index < ((NodeDescPtr)node.buffer)->numRecords - 1) {
 			++index;
-		}
-		else
-		{
-			if (right.buffer == nil)
-			{
-				nodeNum = ((NodeDescPtr) node.buffer)->fLink;
-				if ( nodeNum > 0)
-				{
-					err = GetNode (btreePtr, nodeNum, &right);
-					M_ExitOnError (err);
+		} else {
+			if (right.buffer == nil) {
+				nodeNum = ((NodeDescPtr)node.buffer)->fLink;
+				if (nodeNum > 0) {
+					err = GetNode(btreePtr, nodeNum, &right);
+					M_ExitOnError(err);
 				} else {
 					err = fsBTEndOfIterationErr;
 					goto ErrorExit;
@@ -778,21 +711,18 @@ OSStatus	BTIterateRecord		(FCB						*filePtr,
 				err = ReleaseNode(btreePtr, &left);
 				M_ExitOnError(err);
 			}
-			left		 = node;
-			node		 = right;
+			left = node;
+			node = right;
 			right.buffer = nil;
-			index		 = 0;
+			index = 0;
 		}
-	}
-	else // operation == kBTreeCurrentRecord
+	} else // operation == kBTreeCurrentRecord
 	{
 		// make sure we have something... <CS9>
-		if ((foundRecord != true) &&
-			(index >= ((NodeDescPtr) node.buffer)->numRecords))
-		{
+		if ((foundRecord != true) && (index >= ((NodeDescPtr)node.buffer)->numRecords)) {
 			err = fsBTEndOfIterationErr;
 			goto ErrorExit;
-		} 
+		}
 	}
 
 	//////////////////// Copy Record And Update Iterator ////////////////////////
@@ -800,46 +730,46 @@ OSStatus	BTIterateRecord		(FCB						*filePtr,
 CopyData:
 
 	// added check for errors <CS9>
-	err = GetRecordByIndex (btreePtr, node.buffer, index, &keyPtr, &recordPtr, &len);
-	M_ExitOnError (err);
+	err = GetRecordByIndex(btreePtr, node.buffer, index, &keyPtr, &recordPtr, &len);
+	M_ExitOnError(err);
 
 	if (recordLen != nil)
 		*recordLen = len;
 
-	if (record != nil)
-	{
+	if (record != nil) {
 		ByteCount recordSize;
 
 		recordSize = record->itemCount * record->itemSize;
-	
-		if (len > recordSize)	len = recordSize;
 
-		BlockMoveData (recordPtr, record->bufferAddress, len);
+		if (len > recordSize)
+			len = recordSize;
+
+		BlockMoveData(recordPtr, record->bufferAddress, len);
 	}
 
-	if (iterator != nil)						// first & last do not require iterator
+	if (iterator != nil) // first & last do not require iterator
 	{
-		iterator->hint.writeCount	= btreePtr->writeCount;
-		iterator->hint.nodeNum		= nodeNum;
-		iterator->hint.index		= index;
-		iterator->hint.reserved1	= 0;
-		iterator->hint.reserved2	= 0;
+		iterator->hint.writeCount = btreePtr->writeCount;
+		iterator->hint.nodeNum = nodeNum;
+		iterator->hint.index = index;
+		iterator->hint.reserved1 = 0;
+		iterator->hint.reserved2 = 0;
 
-		iterator->version			= 0;
-		iterator->reserved			= 0;
-		
+		iterator->version = 0;
+		iterator->reserved = 0;
+
 		/* SER
 		 * Check for infinite loops by making sure we do not
 		 * process more leaf records, than can possibly be (or the BTree header
 		 * is seriously damaged)....a brute force method.
 		 */
 		if ((operation == kBTreeFirstRecord) || (operation == kBTreeLastRecord))
-			iterator->hitCount		= 1;
+			iterator->hitCount = 1;
 		else if (operation != kBTreeCurrentRecord)
-			iterator->hitCount		+= 1;
+			iterator->hitCount += 1;
 		/* Always use the highest max, in case the grows while iterating */
-		iterator->maxLeafRecs		= max(btreePtr->leafRecords, iterator->maxLeafRecs);
-		
+		iterator->maxLeafRecs = max(btreePtr->leafRecords, iterator->maxLeafRecs);
+
 #if 0
 		if (iterator->hitCount > iterator->maxLeafRecs + kNumLeafRecSlack)
 		{
@@ -848,26 +778,23 @@ CopyData:
 			goto ErrorExit;
 		}
 #endif
-		
-		BlockMoveData ((Ptr)keyPtr, (Ptr)&iterator->key, CalcKeySize(btreePtr, keyPtr));
-	}
 
+		BlockMoveData((Ptr)keyPtr, (Ptr)&iterator->key, CalcKeySize(btreePtr, keyPtr));
+	}
 
 	///////////////////////////// Release Nodes /////////////////////////////////
 
-	err = ReleaseNode (btreePtr, &node);
-	M_ExitOnError (err);
+	err = ReleaseNode(btreePtr, &node);
+	M_ExitOnError(err);
 
-	if (left.buffer != nil)
-	{
-		err = ReleaseNode (btreePtr, &left);
-		M_ExitOnError (err);
+	if (left.buffer != nil) {
+		err = ReleaseNode(btreePtr, &left);
+		M_ExitOnError(err);
 	}
 
-	if (right.buffer != nil)
-	{
-		err = ReleaseNode (btreePtr, &right);
-		M_ExitOnError (err);
+	if (right.buffer != nil) {
+		err = ReleaseNode(btreePtr, &right);
+		M_ExitOnError(err);
 	}
 
 	return noErr;
@@ -876,32 +803,30 @@ CopyData:
 
 ErrorExit:
 
-	(void)	ReleaseNode (btreePtr, &left);
-	(void)	ReleaseNode (btreePtr, &node);
-	(void)	ReleaseNode (btreePtr, &right);
+	(void)ReleaseNode(btreePtr, &left);
+	(void)ReleaseNode(btreePtr, &node);
+	(void)ReleaseNode(btreePtr, &right);
 
 	if (recordLen != nil)
 		*recordLen = 0;
 
-	if (iterator != nil)
-	{
-		iterator->hint.writeCount	= 0;
-		iterator->hint.nodeNum		= 0;
-		iterator->hint.index		= 0;
-		iterator->hint.reserved1	= 0;
-		iterator->hint.reserved2	= 0;
+	if (iterator != nil) {
+		iterator->hint.writeCount = 0;
+		iterator->hint.nodeNum = 0;
+		iterator->hint.index = 0;
+		iterator->hint.reserved1 = 0;
+		iterator->hint.reserved2 = 0;
 
-		iterator->version			= 0;
-		iterator->reserved			= 0;
-		iterator->key.length16		= 0;
+		iterator->version = 0;
+		iterator->reserved = 0;
+		iterator->key.length16 = 0;
 	}
 
-	if ( err == fsBTEmptyErr || err == fsBTEndOfIterationErr )
+	if (err == fsBTEmptyErr || err == fsBTEndOfIterationErr)
 		err = fsBTRecordNotFoundErr;
 
 	return err;
 }
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTIterateRecords
@@ -920,55 +845,45 @@ Result:		noErr		- success
 		!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus
-BTIterateRecords(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator *iterator,
-		 IterateCallBackProcPtr	 callBackProc, void * callBackState)
-{
-	OSStatus		err;
-	BTreeControlBlockPtr	btreePtr;
-	BTreeKeyPtr		keyPtr;
-	RecordPtr		recordPtr;
-	UInt16			len;
-	Boolean			foundRecord;
-	UInt32			nodeNum;
-	BlockDescriptor		left, node, right;
-	UInt16			index;
-
+OSStatus BTIterateRecords(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator *iterator, IterateCallBackProcPtr callBackProc, void *callBackState) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	BTreeKeyPtr keyPtr;
+	RecordPtr recordPtr;
+	UInt16 len;
+	Boolean foundRecord;
+	UInt32 nodeNum;
+	BlockDescriptor left, node, right;
+	UInt16 index;
 
 	////////////////////////// Priliminary Checks ///////////////////////////////
 
-	left.buffer       = nil;
-	left.blockHeader  = nil;
-	right.buffer      = nil;
+	left.buffer = nil;
+	left.blockHeader = nil;
+	right.buffer = nil;
 	right.blockHeader = nil;
-	node.buffer       = nil;
-	node.blockHeader  = nil;
+	node.buffer = nil;
+	node.blockHeader = nil;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
-	if ((operation != kBTreeFirstRecord)	&&
-		(operation != kBTreeNextRecord)		&&
-		(operation != kBTreeCurrentRecord)	&&
-		(operation != kBTreePrevRecord)		&&
-		(operation != kBTreeLastRecord))
-	{
+	if ((operation != kBTreeFirstRecord) && (operation != kBTreeNextRecord) && (operation != kBTreeCurrentRecord) && (operation != kBTreePrevRecord) &&
+	    (operation != kBTreeLastRecord)) {
 		err = fsInvalidIterationMovmentErr;
 		goto ErrorExit;
 	}
 
 	/////////////////////// Find First or Last Record ///////////////////////////
 
-	if ((operation == kBTreeFirstRecord) || (operation == kBTreeLastRecord))
-	{
+	if ((operation == kBTreeFirstRecord) || (operation == kBTreeLastRecord)) {
 		if (operation == kBTreeFirstRecord)
 			nodeNum = btreePtr->firstLeafNode;
 		else
 			nodeNum = btreePtr->lastLeafNode;
 
-		if (nodeNum == 0)
-		{
+		if (nodeNum == 0) {
 			err = fsBTEmptyErr;
 			goto ErrorExit;
 		}
@@ -976,9 +891,7 @@ BTIterateRecords(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator 
 		err = GetNode(btreePtr, nodeNum, &node);
 		M_ExitOnError(err);
 
-		if ( ((NodeDescPtr)node.buffer)->kind != kBTLeafNode ||
-			 ((NodeDescPtr)node.buffer)->numRecords <=  0 )
-		{
+		if (((NodeDescPtr)node.buffer)->kind != kBTLeafNode || ((NodeDescPtr)node.buffer)->numRecords <= 0) {
 			err = ReleaseNode(btreePtr, &node);
 			M_ExitOnError(err);
 
@@ -990,35 +903,27 @@ BTIterateRecords(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator 
 		if (operation == kBTreeFirstRecord)
 			index = 0;
 		else
-			index = ((BTNodeDescriptor*) node.buffer)->numRecords - 1;
+			index = ((BTNodeDescriptor *)node.buffer)->numRecords - 1;
 
 		goto ProcessData;
 	}
 
 	//////////////////////// Find Iterator Position /////////////////////////////
 
-	err = FindIteratorPosition(btreePtr, iterator, &left, &node, &right,
-				   &nodeNum, &index, &foundRecord);
+	err = FindIteratorPosition(btreePtr, iterator, &left, &node, &right, &nodeNum, &index, &foundRecord);
 	if (err == fsBTRecordNotFoundErr)
 		err = 0;
 	M_ExitOnError(err);
 
-
 	///////////////////// Find Next Or Previous Record //////////////////////////
 
-	if (operation == kBTreePrevRecord)
-	{
-		if (index > 0)
-		{
+	if (operation == kBTreePrevRecord) {
+		if (index > 0) {
 			--index;
-		}
-		else
-		{
-			if (left.buffer == nil)
-			{
-				nodeNum = ((NodeDescPtr) node.buffer)->bLink;
-				if ( nodeNum > 0)
-				{
+		} else {
+			if (left.buffer == nil) {
+				nodeNum = ((NodeDescPtr)node.buffer)->bLink;
+				if (nodeNum > 0) {
 					err = GetNode(btreePtr, nodeNum, &left);
 					M_ExitOnError(err);
 				} else {
@@ -1031,38 +936,28 @@ BTIterateRecords(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator 
 				err = ReleaseNode(btreePtr, &right);
 				M_ExitOnError(err);
 			}
-			right	    = node;
-			node	    = left;
+			right = node;
+			node = left;
 			left.buffer = nil;
-			index	    = ((NodeDescPtr) node.buffer)->numRecords -1;
+			index = ((NodeDescPtr)node.buffer)->numRecords - 1;
 		}
-	}
-	else if (operation == kBTreeNextRecord)
-	{
-		if ((foundRecord != true) &&
-			(((NodeDescPtr)node.buffer)->fLink == 0) &&
-			(index == ((NodeDescPtr)node.buffer)->numRecords))
-		{
+	} else if (operation == kBTreeNextRecord) {
+		if ((foundRecord != true) && (((NodeDescPtr)node.buffer)->fLink == 0) && (index == ((NodeDescPtr)node.buffer)->numRecords)) {
 			err = fsBTEndOfIterationErr;
 			goto ErrorExit;
-		} 
-	
+		}
+
 		// we did not find the record but the index is already positioned correctly
-		if ((foundRecord == false) && (index != ((NodeDescPtr)node.buffer)->numRecords)) 
+		if ((foundRecord == false) && (index != ((NodeDescPtr)node.buffer)->numRecords))
 			goto ProcessData;
 
 		// we found the record OR we have to look in the next node
-		if (index < ((NodeDescPtr)node.buffer)->numRecords -1)
-		{
+		if (index < ((NodeDescPtr)node.buffer)->numRecords - 1) {
 			++index;
-		}
-		else
-		{
-			if (right.buffer == nil)
-			{
+		} else {
+			if (right.buffer == nil) {
 				nodeNum = ((NodeDescPtr)node.buffer)->fLink;
-				if ( nodeNum > 0)
-				{
+				if (nodeNum > 0) {
 					err = GetNode(btreePtr, nodeNum, &right);
 					M_ExitOnError(err);
 				} else {
@@ -1075,21 +970,18 @@ BTIterateRecords(FCB *filePtr, BTreeIterationOperation operation, BTreeIterator 
 				err = ReleaseNode(btreePtr, &left);
 				M_ExitOnError(err);
 			}
-			left	     = node;
-			node	     = right;
+			left = node;
+			node = right;
 			right.buffer = nil;
-			index	     = 0;
+			index = 0;
 		}
-	}
-	else // operation == kBTreeCurrentRecord
+	} else // operation == kBTreeCurrentRecord
 	{
 		// make sure we have something... <CS9>
-		if ((foundRecord != true) &&
-			(index >= ((NodeDescPtr)node.buffer)->numRecords))
-		{
+		if ((foundRecord != true) && (index >= ((NodeDescPtr)node.buffer)->numRecords)) {
 			err = fsBTEndOfIterationErr;
 			goto ErrorExit;
-		} 
+		}
 	}
 
 	////////////////////  Process Records Using Callback  ////////////////////////
@@ -1100,19 +992,17 @@ ProcessData:
 		err = btBadNode;
 		goto ErrorExit;
 	}
-	
+
 	while (err == 0) {
 		if (callBackProc(keyPtr, recordPtr, len, callBackState) == 0)
 			break;
-		
-		if ((index+1) < ((NodeDescPtr)node.buffer)->numRecords) {
+
+		if ((index + 1) < ((NodeDescPtr)node.buffer)->numRecords) {
 			++index;
 		} else {
-			if (right.buffer == nil)
-			{
+			if (right.buffer == nil) {
 				nodeNum = ((NodeDescPtr)node.buffer)->fLink;
-				if ( nodeNum > 0)
-				{
+				if (nodeNum > 0) {
 					err = GetNode(btreePtr, nodeNum, &right);
 					M_ExitOnError(err);
 				} else {
@@ -1125,48 +1015,42 @@ ProcessData:
 				err = ReleaseNode(btreePtr, &left);
 				M_ExitOnError(err);
 			}
-			left	     = node;
-			node	     = right;
+			left = node;
+			node = right;
 			right.buffer = nil;
-			index	     = 0;
+			index = 0;
 		}
-		err = GetRecordByIndex(btreePtr, node.buffer, index,
-						&keyPtr, &recordPtr, &len);
+		err = GetRecordByIndex(btreePtr, node.buffer, index, &keyPtr, &recordPtr, &len);
 		if (err) {
 			err = btBadNode;
 			goto ErrorExit;
 		}
 	}
 
-
 	///////////////// Update Iterator to Last Item Processed /////////////////////
 
-
-	if (iterator != nil)	// first & last have optional iterator
+	if (iterator != nil) // first & last have optional iterator
 	{
 		iterator->hint.writeCount = btreePtr->writeCount;
-		iterator->hint.nodeNum	  = nodeNum;
-		iterator->hint.index	  = index;
-		iterator->version	  = 0;
+		iterator->hint.nodeNum = nodeNum;
+		iterator->hint.index = index;
+		iterator->version = 0;
 
 		BlockMoveData((Ptr)keyPtr, (Ptr)&iterator->key, CalcKeySize(btreePtr, keyPtr));
 	}
 	M_ExitOnError(err);
-
 
 	///////////////////////////// Release Nodes /////////////////////////////////
 
 	err = ReleaseNode(btreePtr, &node);
 	M_ExitOnError(err);
 
-	if (left.buffer != nil)
-	{
+	if (left.buffer != nil) {
 		err = ReleaseNode(btreePtr, &left);
 		M_ExitOnError(err);
 	}
 
-	if (right.buffer != nil)
-	{
+	if (right.buffer != nil) {
 		err = ReleaseNode(btreePtr, &right);
 		M_ExitOnError(err);
 	}
@@ -1177,125 +1061,115 @@ ProcessData:
 
 ErrorExit:
 
-	(void) ReleaseNode(btreePtr, &left);
-	(void) ReleaseNode(btreePtr, &node);
-	(void) ReleaseNode(btreePtr, &right);
+	(void)ReleaseNode(btreePtr, &left);
+	(void)ReleaseNode(btreePtr, &node);
+	(void)ReleaseNode(btreePtr, &right);
 
-	if (iterator != nil)
-	{
+	if (iterator != nil) {
 		iterator->hint.writeCount = 0;
-		iterator->hint.nodeNum	  = 0;
-		iterator->hint.index	  = 0;
-		iterator->version	  = 0;
-		iterator->key.length16	  = 0;
+		iterator->hint.nodeNum = 0;
+		iterator->hint.index = 0;
+		iterator->version = 0;
+		iterator->key.length16 = 0;
 	}
 
-	if ( err == fsBTEmptyErr || err == fsBTEndOfIterationErr )
+	if (err == fsBTEmptyErr || err == fsBTEndOfIterationErr)
 		err = fsBTRecordNotFoundErr;
 
 	return err;
 }
 
-
 //////////////////////////////// BTInsertRecord /////////////////////////////////
 
-OSStatus	BTInsertRecord		(FCB						*filePtr,
-								 BTreeIterator				*iterator,
-								 FSBufferDescriptor			*record,
-								 UInt16						 recordLen )
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
-	TreePathTable			treePathTable;
-	SInt32					nodesNeeded;
-	BlockDescriptor			nodeRec;
-	UInt32					insertNodeNum;
-	UInt16					index;
-	Boolean					recordFit;
+OSStatus BTInsertRecord(FCB *filePtr, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 recordLen) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	TreePathTable treePathTable;
+	SInt32 nodesNeeded;
+	BlockDescriptor nodeRec;
+	UInt32 insertNodeNum;
+	UInt16 index;
+	Boolean recordFit;
 
 	////////////////////////// Priliminary Checks ///////////////////////////////
 
-	nodeRec.buffer = nil;					// so we can call ReleaseNode
+	nodeRec.buffer = nil; // so we can call ReleaseNode
 	nodeRec.blockHeader = nil;
 
-	err = CheckInsertParams (filePtr, iterator, record, recordLen);
+	err = CheckInsertParams(filePtr, iterator, record, recordLen);
 	if (err != noErr)
-		return	err;
+		return err;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
-
 
 	///////////////////////// Find Insert Position //////////////////////////////
 
 	// always call SearchTree for Insert
-	err = SearchTree (btreePtr, &iterator->key, treePathTable, &insertNodeNum, &nodeRec, &index);
+	err = SearchTree(btreePtr, &iterator->key, treePathTable, &insertNodeNum, &nodeRec, &index);
 
-	switch (err)				// set/replace/insert decision point
+	switch (err) // set/replace/insert decision point
 	{
-		case noErr:			err = fsBTDuplicateRecordErr;
-								goto ErrorExit;
+		case noErr:
+			err = fsBTDuplicateRecordErr;
+			goto ErrorExit;
 
-		case fsBTRecordNotFoundErr:	break;
+		case fsBTRecordNotFoundErr:
+			break;
 
-		case fsBTEmptyErr:	// if tree empty add 1st leaf node
+		case fsBTEmptyErr: // if tree empty add 1st leaf node
 
-								if (btreePtr->freeNodes == 0)
-								{
-									err = ExtendBTree (btreePtr, btreePtr->totalNodes + 1);
-									M_ExitOnError (err);
-								}
+			if (btreePtr->freeNodes == 0) {
+				err = ExtendBTree(btreePtr, btreePtr->totalNodes + 1);
+				M_ExitOnError(err);
+			}
 
-								err = AllocateNode (btreePtr, &insertNodeNum);
-								M_ExitOnError (err);
+			err = AllocateNode(btreePtr, &insertNodeNum);
+			M_ExitOnError(err);
 
-								err = GetNewNode (btreePtr, insertNodeNum, &nodeRec);
-								M_ExitOnError (err);
+			err = GetNewNode(btreePtr, insertNodeNum, &nodeRec);
+			M_ExitOnError(err);
 
-								// XXXdbg
-								ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
-								
-								((NodeDescPtr)nodeRec.buffer)->kind = kBTLeafNode;
-								((NodeDescPtr)nodeRec.buffer)->height	= 1;
+			// XXXdbg
+			ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
 
-								recordFit = InsertKeyRecord (btreePtr, nodeRec.buffer, 0,
-															 &iterator->key, KeyLength(btreePtr, &iterator->key),
-															 record->bufferAddress, recordLen );
-								if (recordFit != true)
-								{
-									err = fsBTRecordTooLargeErr;
-									goto ErrorExit;
-								}
+			((NodeDescPtr)nodeRec.buffer)->kind = kBTLeafNode;
+			((NodeDescPtr)nodeRec.buffer)->height = 1;
 
-								err = UpdateNode (btreePtr, &nodeRec, 0, kLockTransaction);
-								M_ExitOnError (err);
+			recordFit =
+			    InsertKeyRecord(btreePtr, nodeRec.buffer, 0, &iterator->key, KeyLength(btreePtr, &iterator->key), record->bufferAddress, recordLen);
+			if (recordFit != true) {
+				err = fsBTRecordTooLargeErr;
+				goto ErrorExit;
+			}
 
-								// update BTreeControlBlock
-								btreePtr->treeDepth	 		= 1;
-								btreePtr->rootNode	 		= insertNodeNum;
-								btreePtr->firstLeafNode		= insertNodeNum;
-								btreePtr->lastLeafNode		= insertNodeNum;
+			err = UpdateNode(btreePtr, &nodeRec, 0, kLockTransaction);
+			M_ExitOnError(err);
 
-								M_BTreeHeaderDirty (btreePtr);
+			// update BTreeControlBlock
+			btreePtr->treeDepth = 1;
+			btreePtr->rootNode = insertNodeNum;
+			btreePtr->firstLeafNode = insertNodeNum;
+			btreePtr->lastLeafNode = insertNodeNum;
 
-								goto Success;
+			M_BTreeHeaderDirty(btreePtr);
 
-		default:				goto ErrorExit;
+			goto Success;
+
+		default:
+			goto ErrorExit;
 	}
 
-	if (index > 0)
-	{
+	if (index > 0) {
 		// XXXdbg
 		ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
-								
-		recordFit = InsertKeyRecord (btreePtr, nodeRec.buffer, index,
-										&iterator->key, KeyLength(btreePtr, &iterator->key),
-										record->bufferAddress, recordLen);
-		if (recordFit == true)
-		{
-			err = UpdateNode (btreePtr, &nodeRec, 0, kLockTransaction);
-			M_ExitOnError (err);
+
+		recordFit =
+		    InsertKeyRecord(btreePtr, nodeRec.buffer, index, &iterator->key, KeyLength(btreePtr, &iterator->key), record->bufferAddress, recordLen);
+		if (recordFit == true) {
+			err = UpdateNode(btreePtr, &nodeRec, 0, kLockTransaction);
+			M_ExitOnError(err);
 
 			goto Success;
 		}
@@ -1303,429 +1177,375 @@ OSStatus	BTInsertRecord		(FCB						*filePtr,
 
 	/////////////////////// Extend File If Necessary ////////////////////////////
 
-	nodesNeeded =  btreePtr->treeDepth + 1 - btreePtr->freeNodes;	//€€ math limit
-	if (nodesNeeded > 0)
-	{
+	nodesNeeded = btreePtr->treeDepth + 1 - btreePtr->freeNodes; // ï¿½ï¿½ math limit
+	if (nodesNeeded > 0) {
 		nodesNeeded += btreePtr->totalNodes;
-		if (nodesNeeded > CalcMapBits (btreePtr))	// we'll need to add a map node too!
+		if (nodesNeeded > CalcMapBits(btreePtr)) // we'll need to add a map node too!
 			++nodesNeeded;
 
-		err = ExtendBTree (btreePtr, nodesNeeded);
-		M_ExitOnError (err);
+		err = ExtendBTree(btreePtr, nodesNeeded);
+		M_ExitOnError(err);
 	}
 
 	// no need to delete existing record
 
-	err = InsertTree (btreePtr, treePathTable, &iterator->key, record->bufferAddress,
-					  recordLen, &nodeRec, index, 1, kInsertRecord, &insertNodeNum);
-	M_ExitOnError (err);
-
+	err = InsertTree(btreePtr, treePathTable, &iterator->key, record->bufferAddress, recordLen, &nodeRec, index, 1, kInsertRecord, &insertNodeNum);
+	M_ExitOnError(err);
 
 	//////////////////////////////// Success ////////////////////////////////////
 
 Success:
 	++btreePtr->writeCount;
 	++btreePtr->leafRecords;
-	M_BTreeHeaderDirty (btreePtr);
-		
+	M_BTreeHeaderDirty(btreePtr);
+
 	// create hint
-	iterator->hint.writeCount 	= btreePtr->writeCount;
-	iterator->hint.nodeNum		= insertNodeNum;
-	iterator->hint.index		= 0;						// unused
-	iterator->hint.reserved1	= 0;
-	iterator->hint.reserved2	= 0;
+	iterator->hint.writeCount = btreePtr->writeCount;
+	iterator->hint.nodeNum = insertNodeNum;
+	iterator->hint.index = 0; // unused
+	iterator->hint.reserved1 = 0;
+	iterator->hint.reserved2 = 0;
 
 	return noErr;
-
 
 	////////////////////////////// Error Exit ///////////////////////////////////
 
 ErrorExit:
 
-	(void) ReleaseNode (btreePtr, &nodeRec);
+	(void)ReleaseNode(btreePtr, &nodeRec);
 
-	iterator->hint.writeCount 	= 0;
-	iterator->hint.nodeNum		= 0;
-	iterator->hint.index		= 0;
-	iterator->hint.reserved1	= 0;
-	iterator->hint.reserved2	= 0;
-	
+	iterator->hint.writeCount = 0;
+	iterator->hint.nodeNum = 0;
+	iterator->hint.index = 0;
+	iterator->hint.reserved1 = 0;
+	iterator->hint.reserved2 = 0;
+
 	if (err == fsBTEmptyErr)
 		err = fsBTRecordNotFoundErr;
 
 	return err;
 }
 
-
 //////////////////////////////// BTReplaceRecord ////////////////////////////////
 
-OSStatus	BTReplaceRecord		(FCB						*filePtr,
-								 BTreeIterator				*iterator,
-								 FSBufferDescriptor			*record,
-								 UInt16						 recordLen )
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
-	TreePathTable			treePathTable;
-	SInt32					nodesNeeded;
-	BlockDescriptor			nodeRec;
-	UInt32					insertNodeNum;
-	UInt16					index;
-	Boolean					recordFit;
-	Boolean					validHint;
-
+OSStatus BTReplaceRecord(FCB *filePtr, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 recordLen) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	TreePathTable treePathTable;
+	SInt32 nodesNeeded;
+	BlockDescriptor nodeRec;
+	UInt32 insertNodeNum;
+	UInt16 index;
+	Boolean recordFit;
+	Boolean validHint;
 
 	////////////////////////// Priliminary Checks ///////////////////////////////
 
-	nodeRec.buffer = nil;					// so we can call ReleaseNode
+	nodeRec.buffer = nil; // so we can call ReleaseNode
 	nodeRec.blockHeader = nil;
 
-	err = CheckInsertParams (filePtr, iterator, record, recordLen);
+	err = CheckInsertParams(filePtr, iterator, record, recordLen);
 	if (err != noErr)
 		return err;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
 
 	////////////////////////////// Take A Hint //////////////////////////////////
 
-	err = IsItAHint (btreePtr, iterator, &validHint);
-	M_ExitOnError (err);
+	err = IsItAHint(btreePtr, iterator, &validHint);
+	M_ExitOnError(err);
 
-	if (validHint)
-	{
+	if (validHint) {
 		insertNodeNum = iterator->hint.nodeNum;
 
-		err = GetNode (btreePtr, insertNodeNum, &nodeRec);
-		if( err == noErr )
-		{
+		err = GetNode(btreePtr, insertNodeNum, &nodeRec);
+		if (err == noErr) {
 			// XXXdbg
 			ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
-								
-			err = TrySimpleReplace (btreePtr, nodeRec.buffer, iterator, record, recordLen, &recordFit);
-			M_ExitOnError (err);
 
-			if (recordFit)
-			{
-				err = UpdateNode (btreePtr, &nodeRec, 0, 0);
-				M_ExitOnError (err);
+			err = TrySimpleReplace(btreePtr, nodeRec.buffer, iterator, record, recordLen, &recordFit);
+			M_ExitOnError(err);
+
+			if (recordFit) {
+				err = UpdateNode(btreePtr, &nodeRec, 0, 0);
+				M_ExitOnError(err);
 
 				++btreePtr->numValidHints;
 
 				goto Success;
+			} else {
+				(void)BTInvalidateHint(iterator);
 			}
-			else
-			{
-				(void) BTInvalidateHint( iterator );
-			}
-			
-			err = ReleaseNode (btreePtr, &nodeRec);
-			M_ExitOnError (err);
-		}
-		else
-		{
-			(void) BTInvalidateHint( iterator );
+
+			err = ReleaseNode(btreePtr, &nodeRec);
+			M_ExitOnError(err);
+		} else {
+			(void)BTInvalidateHint(iterator);
 		}
 	}
 
-
 	////////////////////////////// Get A Clue ///////////////////////////////////
 
-	err = SearchTree (btreePtr, &iterator->key, treePathTable, &insertNodeNum, &nodeRec, &index);
-	M_ExitOnError (err);					// record must exit for Replace
+	err = SearchTree(btreePtr, &iterator->key, treePathTable, &insertNodeNum, &nodeRec, &index);
+	M_ExitOnError(err); // record must exit for Replace
 
 	// optimization - if simple replace will work then don't extend btree
-	// €€ if we tried this before, and failed because it wouldn't fit then we shouldn't try this again...
+	// ï¿½ï¿½ if we tried this before, and failed because it wouldn't fit then we shouldn't try this again...
 
 	// XXXdbg
 	ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
 
-	err = TrySimpleReplace (btreePtr, nodeRec.buffer, iterator, record, recordLen, &recordFit);
-	M_ExitOnError (err);
+	err = TrySimpleReplace(btreePtr, nodeRec.buffer, iterator, record, recordLen, &recordFit);
+	M_ExitOnError(err);
 
-	if (recordFit)
-	{
-		err = UpdateNode (btreePtr, &nodeRec, 0, 0);
-		M_ExitOnError (err);
+	if (recordFit) {
+		err = UpdateNode(btreePtr, &nodeRec, 0, 0);
+		M_ExitOnError(err);
 
 		goto Success;
 	}
 
-
 	//////////////////////////// Make Some Room /////////////////////////////////
 
-	nodesNeeded =  btreePtr->treeDepth + 1 - btreePtr->freeNodes;	//€€ math limit
-	if (nodesNeeded > 0)
-	{
+	nodesNeeded = btreePtr->treeDepth + 1 - btreePtr->freeNodes; // ï¿½ï¿½ math limit
+	if (nodesNeeded > 0) {
 		nodesNeeded += btreePtr->totalNodes;
-		if (nodesNeeded > CalcMapBits (btreePtr))	// we'll need to add a map node too!
+		if (nodesNeeded > CalcMapBits(btreePtr)) // we'll need to add a map node too!
 			++nodesNeeded;
 
-		err = ExtendBTree (btreePtr, nodesNeeded);
-		M_ExitOnError (err);
+		err = ExtendBTree(btreePtr, nodesNeeded);
+		M_ExitOnError(err);
 	}
-
 
 	// XXXdbg
 	ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
-								
-	DeleteRecord (btreePtr, nodeRec.buffer, index);	// delete existing key/record
 
-	err = InsertTree (btreePtr, treePathTable, &iterator->key, record->bufferAddress,
-					  recordLen, &nodeRec, index, 1, kReplaceRecord, &insertNodeNum);
-	M_ExitOnError (err);
+	DeleteRecord(btreePtr, nodeRec.buffer, index); // delete existing key/record
 
-	++btreePtr->writeCount;	/* writeCount changes only if the tree structure changed */
+	err = InsertTree(btreePtr, treePathTable, &iterator->key, record->bufferAddress, recordLen, &nodeRec, index, 1, kReplaceRecord, &insertNodeNum);
+	M_ExitOnError(err);
+
+	++btreePtr->writeCount; /* writeCount changes only if the tree structure changed */
 
 Success:
 	// create hint
-	iterator->hint.writeCount 	= btreePtr->writeCount;
-	iterator->hint.nodeNum		= insertNodeNum;
-	iterator->hint.index		= 0;						// unused
-	iterator->hint.reserved1	= 0;
-	iterator->hint.reserved2	= 0;
+	iterator->hint.writeCount = btreePtr->writeCount;
+	iterator->hint.nodeNum = insertNodeNum;
+	iterator->hint.index = 0; // unused
+	iterator->hint.reserved1 = 0;
+	iterator->hint.reserved2 = 0;
 
 	return noErr;
-
 
 	////////////////////////////// Error Exit ///////////////////////////////////
 
 ErrorExit:
 
-	(void) ReleaseNode (btreePtr, &nodeRec);
+	(void)ReleaseNode(btreePtr, &nodeRec);
 
-	iterator->hint.writeCount 	= 0;
-	iterator->hint.nodeNum		= 0;
-	iterator->hint.index		= 0;
-	iterator->hint.reserved1	= 0;
-	iterator->hint.reserved2	= 0;
+	iterator->hint.writeCount = 0;
+	iterator->hint.nodeNum = 0;
+	iterator->hint.index = 0;
+	iterator->hint.reserved1 = 0;
+	iterator->hint.reserved2 = 0;
 
 	return err;
 }
 
-
-
 //////////////////////////////// BTUpdateRecord ////////////////////////////////
 
-OSStatus
-BTUpdateRecord(FCB *filePtr, BTreeIterator *iterator,
-               IterateCallBackProcPtr callBackProc, void * callBackState)
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
-	TreePathTable			treePathTable;
-	BlockDescriptor			nodeRec;
-	RecordPtr				recordPtr;
-	BTreeKeyPtr				keyPtr;
-	UInt32					insertNodeNum;
-	UInt16					recordLen;
-	UInt16					index;
-	Boolean					validHint;
-
+OSStatus BTUpdateRecord(FCB *filePtr, BTreeIterator *iterator, IterateCallBackProcPtr callBackProc, void *callBackState) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	TreePathTable treePathTable;
+	BlockDescriptor nodeRec;
+	RecordPtr recordPtr;
+	BTreeKeyPtr keyPtr;
+	UInt32 insertNodeNum;
+	UInt16 recordLen;
+	UInt16 index;
+	Boolean validHint;
 
 	////////////////////////// Priliminary Checks ///////////////////////////////
 
-	nodeRec.buffer = nil;					// so we can call ReleaseNode
+	nodeRec.buffer = nil; // so we can call ReleaseNode
 	nodeRec.blockHeader = nil;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
 
 	////////////////////////////// Take A Hint //////////////////////////////////
 
-	err = IsItAHint (btreePtr, iterator, &validHint);
-	M_ExitOnError (err);
+	err = IsItAHint(btreePtr, iterator, &validHint);
+	M_ExitOnError(err);
 
-	if (validHint)
-	{
+	if (validHint) {
 		insertNodeNum = iterator->hint.nodeNum;
 
-		err = GetNode (btreePtr, insertNodeNum, &nodeRec);
-		if (err == noErr)
-		{
-			if (((NodeDescPtr)nodeRec.buffer)->kind == kBTLeafNode &&
-			    SearchNode (btreePtr, nodeRec.buffer, &iterator->key, &index))
-			{
+		err = GetNode(btreePtr, insertNodeNum, &nodeRec);
+		if (err == noErr) {
+			if (((NodeDescPtr)nodeRec.buffer)->kind == kBTLeafNode && SearchNode(btreePtr, nodeRec.buffer, &iterator->key, &index)) {
 				err = GetRecordByIndex(btreePtr, nodeRec.buffer, index, &keyPtr, &recordPtr, &recordLen);
-				M_ExitOnError (err);
+				M_ExitOnError(err);
 
 				// XXXdbg
 				ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
-								
-				err = callBackProc(keyPtr, recordPtr, recordLen, callBackState);
-				M_ExitOnError (err);
 
-				err = UpdateNode (btreePtr, &nodeRec, 0, 0);
-				M_ExitOnError (err);
+				err = callBackProc(keyPtr, recordPtr, recordLen, callBackState);
+				M_ExitOnError(err);
+
+				err = UpdateNode(btreePtr, &nodeRec, 0, 0);
+				M_ExitOnError(err);
 
 				++btreePtr->numValidHints;
 
 				goto Success;
+			} else {
+				(void)BTInvalidateHint(iterator);
 			}
-			else
-			{
-				(void) BTInvalidateHint( iterator );
-			}
-			
-			err = ReleaseNode (btreePtr, &nodeRec);
-			M_ExitOnError (err);
-		}
-		else
-		{
-			(void) BTInvalidateHint( iterator );
+
+			err = ReleaseNode(btreePtr, &nodeRec);
+			M_ExitOnError(err);
+		} else {
+			(void)BTInvalidateHint(iterator);
 		}
 	}
 
 	////////////////////////////// Get A Clue ///////////////////////////////////
 
-	err = SearchTree (btreePtr, &iterator->key, treePathTable, &insertNodeNum, &nodeRec, &index);
-	M_ExitOnError (err);
+	err = SearchTree(btreePtr, &iterator->key, treePathTable, &insertNodeNum, &nodeRec, &index);
+	M_ExitOnError(err);
 
 	err = GetRecordByIndex(btreePtr, nodeRec.buffer, index, &keyPtr, &recordPtr, &recordLen);
-	M_ExitOnError (err);
+	M_ExitOnError(err);
 
 	// XXXdbg
 	ModifyBlockStart(btreePtr->fileRefNum, &nodeRec);
-								
-	err = callBackProc(keyPtr, recordPtr, recordLen, callBackState);
-	M_ExitOnError (err);
 
-	err = UpdateNode (btreePtr, &nodeRec, 0, 0);
-	M_ExitOnError (err);
+	err = callBackProc(keyPtr, recordPtr, recordLen, callBackState);
+	M_ExitOnError(err);
+
+	err = UpdateNode(btreePtr, &nodeRec, 0, 0);
+	M_ExitOnError(err);
 
 Success:
 	// create hint
-	iterator->hint.writeCount 	= btreePtr->writeCount;
-	iterator->hint.nodeNum		= insertNodeNum;
-	iterator->hint.index		= 0;
-	iterator->hint.reserved1	= 0;
-	iterator->hint.reserved2	= 0;
+	iterator->hint.writeCount = btreePtr->writeCount;
+	iterator->hint.nodeNum = insertNodeNum;
+	iterator->hint.index = 0;
+	iterator->hint.reserved1 = 0;
+	iterator->hint.reserved2 = 0;
 	return noErr;
 
 	////////////////////////////// Error Exit ///////////////////////////////////
 
 ErrorExit:
 
-	(void) ReleaseNode (btreePtr, &nodeRec);
+	(void)ReleaseNode(btreePtr, &nodeRec);
 
-	iterator->hint.writeCount 	= 0;
-	iterator->hint.nodeNum		= 0;
-	iterator->hint.index		= 0;
-	iterator->hint.reserved1	= 0;
-	iterator->hint.reserved2	= 0;
+	iterator->hint.writeCount = 0;
+	iterator->hint.nodeNum = 0;
+	iterator->hint.index = 0;
+	iterator->hint.reserved1 = 0;
+	iterator->hint.reserved2 = 0;
 	return err;
 }
 
-
-
 //////////////////////////////// BTDeleteRecord /////////////////////////////////
 
-OSStatus	BTDeleteRecord		(FCB						*filePtr,
-								 BTreeIterator				*iterator )
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
-	TreePathTable			treePathTable;
-	BlockDescriptor			nodeRec;
-	UInt32					nodeNum;
-	UInt16					index;
-
+OSStatus BTDeleteRecord(FCB *filePtr, BTreeIterator *iterator) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
+	TreePathTable treePathTable;
+	BlockDescriptor nodeRec;
+	UInt32 nodeNum;
+	UInt16 index;
 
 	////////////////////////// Priliminary Checks ///////////////////////////////
 
-	nodeRec.buffer = nil;					// so we can call ReleaseNode
+	nodeRec.buffer = nil; // so we can call ReleaseNode
 	nodeRec.blockHeader = nil;
 
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
-	M_ReturnErrorIf (iterator == nil,	paramErr);
+	M_ReturnErrorIf(filePtr == nil, paramErr);
+	M_ReturnErrorIf(iterator == nil, paramErr);
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	if (btreePtr == nil)
-	{
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
+	if (btreePtr == nil) {
 		err = fsBTInvalidFileErr;
 		goto ErrorExit;
 	}
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
 
-
 	/////////////////////////////// Find Key ////////////////////////////////////
 
-	//€€ check hint for simple delete case (index > 0, numRecords > 2)
+	// ï¿½ï¿½ check hint for simple delete case (index > 0, numRecords > 2)
 
-	err = SearchTree (btreePtr, &iterator->key, treePathTable, &nodeNum, &nodeRec, &index);
-	M_ExitOnError (err);					// record must exit for Delete
-
+	err = SearchTree(btreePtr, &iterator->key, treePathTable, &nodeNum, &nodeRec, &index);
+	M_ExitOnError(err); // record must exit for Delete
 
 	///////////////////////////// Delete Record /////////////////////////////////
 
-	err = DeleteTree (btreePtr, treePathTable, &nodeRec, index, 1);
-	M_ExitOnError (err);
+	err = DeleteTree(btreePtr, treePathTable, &nodeRec, index, 1);
+	M_ExitOnError(err);
 
 	++btreePtr->writeCount;
 	--btreePtr->leafRecords;
-	M_BTreeHeaderDirty (btreePtr);
-		
-	iterator->hint.nodeNum	= 0;
+	M_BTreeHeaderDirty(btreePtr);
+
+	iterator->hint.nodeNum = 0;
 
 	return noErr;
 
 	////////////////////////////// Error Exit ///////////////////////////////////
 
 ErrorExit:
-	(void) ReleaseNode (btreePtr, &nodeRec);
+	(void)ReleaseNode(btreePtr, &nodeRec);
 
-	return	err;
+	return err;
 }
 
+OSStatus BTGetInformation(FCB *filePtr, UInt16 version, BTreeInfoRec *info) {
+#pragma unused(version)
 
+	BTreeControlBlockPtr btreePtr;
 
-OSStatus	BTGetInformation	(FCB					*filePtr,
-								 UInt16					 version,
-								 BTreeInfoRec			*info )
-{
-#pragma unused (version)
+	M_ReturnErrorIf(filePtr == nil, paramErr);
 
-	BTreeControlBlockPtr	btreePtr;
-
-
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
-
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
 	/*
 	 * XXX SER
 	 * This should not require the whole tree to be locked, just maybe the BTreeControlBlockPtr
-	 * 
+	 *
 	 * REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 	 */
 
-	M_ReturnErrorIf (btreePtr == nil,	fsBTInvalidFileErr);
-	M_ReturnErrorIf (info == nil,		paramErr);
+	M_ReturnErrorIf(btreePtr == nil, fsBTInvalidFileErr);
+	M_ReturnErrorIf(info == nil, paramErr);
 
-	//€€ check version?
+	// ï¿½ï¿½ check version?
 
-	info->nodeSize		= btreePtr->nodeSize;
-	info->maxKeyLength	= btreePtr->maxKeyLength;
-	info->treeDepth		= btreePtr->treeDepth;
-	info->numRecords	= btreePtr->leafRecords;
-	info->numNodes		= btreePtr->totalNodes;
-	info->numFreeNodes	= btreePtr->freeNodes;
-	info->lastfsync		= btreePtr->lastfsync;
-	info->reserved		= 0;
+	info->nodeSize = btreePtr->nodeSize;
+	info->maxKeyLength = btreePtr->maxKeyLength;
+	info->treeDepth = btreePtr->treeDepth;
+	info->numRecords = btreePtr->leafRecords;
+	info->numNodes = btreePtr->totalNodes;
+	info->numFreeNodes = btreePtr->freeNodes;
+	info->lastfsync = btreePtr->lastfsync;
+	info->reserved = 0;
 
 	return noErr;
 }
 
 // XXXdbg
-__private_extern__
-static OSStatus BTIsDirty(FCB *filePtr)
-{
-	BTreeControlBlockPtr	btreePtr;
+__private_extern__ static OSStatus BTIsDirty(FCB *filePtr) {
+	BTreeControlBlockPtr btreePtr;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 	return TreeIsDirty(btreePtr);
 }
 
@@ -1743,25 +1563,22 @@ Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	BTFlushPath				(FCB					*filePtr)
-{
-	OSStatus				err;
-	BTreeControlBlockPtr	btreePtr;
+OSStatus BTFlushPath(FCB *filePtr) {
+	OSStatus err;
+	BTreeControlBlockPtr btreePtr;
 
+	M_ReturnErrorIf(filePtr == nil, paramErr);
 
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-
-	M_ReturnErrorIf (btreePtr == nil,	fsBTInvalidFileErr);
+	M_ReturnErrorIf(btreePtr == nil, fsBTInvalidFileErr);
 
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, false);
 
-	err = UpdateHeader (btreePtr, false);
+	err = UpdateHeader(btreePtr, false);
 
-	return	err;
+	return err;
 }
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTReload  -  Reload B-tree Header Data.
@@ -1779,19 +1596,16 @@ Result:		noErr - success
 	     != noErr - failure
 -------------------------------------------------------------------------------*/
 
-OSStatus
-BTReloadData(FCB *filePtr)
-{
+OSStatus BTReloadData(FCB *filePtr) {
 	OSStatus err;
 	BTreeControlBlockPtr btreePtr;
 	BlockDescriptor node;
-	BTHeaderRec *header;	
-
+	BTHeaderRec *header;
 
 	node.buffer = nil;
 	node.blockHeader = nil;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 	if (btreePtr == nil)
 		return (fsBTInvalidFileErr);
 
@@ -1800,27 +1614,26 @@ BTReloadData(FCB *filePtr)
 	err = GetNode(btreePtr, kHeaderNodeNum, &node);
 	if (err != noErr)
 		return (err);
-	
-	header = (BTHeaderRec*)((char *)node.buffer + sizeof(BTNodeDescriptor));
-	if ((err = VerifyHeader (filePtr, header)) == 0) {
-		btreePtr->treeDepth     = header->treeDepth;
-		btreePtr->rootNode      = header->rootNode;
-		btreePtr->leafRecords   = header->leafRecords;
+
+	header = (BTHeaderRec *)((char *)node.buffer + sizeof(BTNodeDescriptor));
+	if ((err = VerifyHeader(filePtr, header)) == 0) {
+		btreePtr->treeDepth = header->treeDepth;
+		btreePtr->rootNode = header->rootNode;
+		btreePtr->leafRecords = header->leafRecords;
 		btreePtr->firstLeafNode = header->firstLeafNode;
-		btreePtr->lastLeafNode  = header->lastLeafNode;
-		btreePtr->maxKeyLength  = header->maxKeyLength;
-		btreePtr->totalNodes    = header->totalNodes;
-		btreePtr->freeNodes     = header->freeNodes;
-		btreePtr->btreeType     = header->btreeType;
+		btreePtr->lastLeafNode = header->lastLeafNode;
+		btreePtr->maxKeyLength = header->maxKeyLength;
+		btreePtr->totalNodes = header->totalNodes;
+		btreePtr->freeNodes = header->freeNodes;
+		btreePtr->btreeType = header->btreeType;
 
 		btreePtr->flags &= (~kBTHeaderDirty);
-	} 
+	}
 
-	(void) ReleaseNode(btreePtr, &node);
+	(void)ReleaseNode(btreePtr, &node);
 
-	return	err;
+	return err;
 }
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTInvalidateHint	-	Invalidates the hint within a BTreeInterator.
@@ -1836,19 +1649,14 @@ Result:		noErr			- success
 			paramErr	- iterator == nil
 -------------------------------------------------------------------------------*/
 
-
-OSStatus	BTInvalidateHint	(BTreeIterator				*iterator )
-{
+OSStatus BTInvalidateHint(BTreeIterator *iterator) {
 	if (iterator == nil)
-		return	paramErr;
+		return paramErr;
 
 	iterator->hint.nodeNum = 0;
 
-	return	noErr;
+	return noErr;
 }
-
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTGetLastSync
@@ -1863,30 +1671,23 @@ Result:		noErr			- success
 			paramErr	- iterator == nil
 -------------------------------------------------------------------------------*/
 
+OSStatus BTGetLastSync(FCB *filePtr, UInt32 *lastsync) {
+	BTreeControlBlockPtr btreePtr;
 
-OSStatus	BTGetLastSync		(FCB					*filePtr,
-								 UInt32					*lastsync)
-{
-	BTreeControlBlockPtr	btreePtr;
+	M_ReturnErrorIf(filePtr == nil, paramErr);
 
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
-
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	
 	/* Maybe instead of requiring a lock..an atomic set might be more appropriate */
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
-	M_ReturnErrorIf (btreePtr == nil,	fsBTInvalidFileErr);
-	M_ReturnErrorIf (lastsync == nil,	paramErr);
+	M_ReturnErrorIf(btreePtr == nil, fsBTInvalidFileErr);
+	M_ReturnErrorIf(lastsync == nil, paramErr);
 
-	*lastsync		= btreePtr->lastfsync;
+	*lastsync = btreePtr->lastfsync;
 
 	return noErr;
 }
-
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	BTSetLastSync
@@ -1902,16 +1703,13 @@ Result:		noErr			- success
 			paramErr	- iterator == nil
 -------------------------------------------------------------------------------*/
 
-
-OSStatus BTSetLastSync(FCB *filePtr, UInt32 lastsync)
-{
-	BTreeControlBlockPtr	btreePtr;
-
+OSStatus BTSetLastSync(FCB *filePtr, UInt32 lastsync) {
+	BTreeControlBlockPtr btreePtr;
 
 	M_ReturnErrorIf(filePtr == nil, paramErr);
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
+
 	/* Maybe instead of requiring a lock..an atomic set might be more appropriate */
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
@@ -1923,41 +1721,37 @@ OSStatus BTSetLastSync(FCB *filePtr, UInt32 lastsync)
 	return noErr;
 }
 
-
 /*-------------------------------------------------------------------------------
 Routine:	BTCheckFreeSpace
 
 Function:	Makes sure there is enough free space so that a tree operation
-            will succeed.
+	    will succeed.
 
 Input:		fcb	- pointer file control block
 
 Output:		none
 
 Result:		noErr			- success
-            
+
 -------------------------------------------------------------------------------*/
 
-__private_extern__
-OSStatus	BTCheckFreeSpace		(FCB					*filePtr)
-{
-	BTreeControlBlockPtr	btreePtr;
-	int 					nodesNeeded, err = noErr;
+__private_extern__ OSStatus BTCheckFreeSpace(FCB *filePtr) {
+	BTreeControlBlockPtr btreePtr;
+	int nodesNeeded, err = noErr;
 
+	M_ReturnErrorIf(filePtr == nil, paramErr);
 
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
-	M_ReturnErrorIf (btreePtr == nil,	fsBTInvalidFileErr);
+	M_ReturnErrorIf(btreePtr == nil, fsBTInvalidFileErr);
 
 	// XXXdbg this is highly conservative but so much better than
 	//        winding up with turds on your disk.
 	//
 	nodesNeeded = (btreePtr->treeDepth + 1) * 10;
-	
+
 	if (btreePtr->freeNodes < nodesNeeded) {
 		err = ExtendBTree(btreePtr, nodesNeeded + btreePtr->totalNodes - btreePtr->freeNodes);
 	}
@@ -1965,21 +1759,17 @@ OSStatus	BTCheckFreeSpace		(FCB					*filePtr)
 	return err;
 }
 
-
-__private_extern__
-OSStatus BTHasContiguousNodes(FCB *filePtr)
-{
-	BTreeControlBlockPtr	btreePtr;
+__private_extern__ OSStatus BTHasContiguousNodes(FCB *filePtr) {
+	BTreeControlBlockPtr btreePtr;
 	// int nodesNeeded, err = noErr;
 
+	M_ReturnErrorIf(filePtr == nil, paramErr);
 
-	M_ReturnErrorIf (filePtr == nil, 	paramErr);
+	btreePtr = (BTreeControlBlockPtr)filePtr->fcbBTCBPtr;
 
-	btreePtr = (BTreeControlBlockPtr) filePtr->fcbBTCBPtr;
-	
 	REQUIRE_FILE_LOCK(btreePtr->fileRefNum, true);
 
-	M_ReturnErrorIf (btreePtr == nil,	fsBTInvalidFileErr);
+	M_ReturnErrorIf(btreePtr == nil, fsBTInvalidFileErr);
 
 	return NodesAreContiguous(FCBTOVCB(filePtr), filePtr, btreePtr->nodeSize);
 }

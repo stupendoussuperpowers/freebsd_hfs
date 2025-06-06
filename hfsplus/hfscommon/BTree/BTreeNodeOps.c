@@ -222,6 +222,8 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 	// If it was in the cache, we'll assume its already a valid node.
 	//
 	
+	printf("pre blockReadFromDisk\n");
+
 	if ( nodePtr->blockReadFromDisk )	// if we read it from disk then check it
 	{
 		err = CheckNode (btreePtr, nodePtr->buffer);
@@ -267,6 +269,8 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 			goto ErrorExit;
 		}
 	}
+
+	printf("[exit] GetNode\n");
 
 	return noErr;
 

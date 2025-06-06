@@ -1,0 +1,8 @@
+#!/bin/sh
+
+./testmount &
+pid=$!
+
+dtrace -p $pid ./utils/tracefile.d
+
+wait $pid
