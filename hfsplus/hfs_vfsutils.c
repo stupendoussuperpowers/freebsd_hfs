@@ -960,7 +960,10 @@ u_long FindMetaDataDirectory(ExtendedVCB* vcb) {
   hfsmp->hfs_privdir_attr.ca_fileid = out_desc.cd_cnid;
   hfsmp->hfs_metadata_createdate = vcb->vcbCrDate;
 
+  printf("\n\nGrail\n\n");
+
   if (VFS_ROOT(HFSTOVFS(hfsmp), 0, &dvp) == 0) {
+    printf("Holy?\n");
     dcp = VTOC(dvp);
     dcp->c_childhint = out_desc.cd_hint;
     dcp->c_nlink++;

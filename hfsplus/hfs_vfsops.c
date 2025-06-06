@@ -611,9 +611,18 @@ static int hfs_cmount(struct mntarg *ma, void *data, uint64_t flags) {
 }
 
 static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
-	printf("---hfs_root---\n");
+	printf("---hfs_root---\n")
 
-	return 0;
+	struct vnode* nvp;
+	int retval;
+	UInt32 rootObjID = kRootDirID;
+
+	if ((retval = VFS_VGET(mp, rootObjID, LK_EXCLUSIVE, &nvp))) {
+		return (retval);
+	}
+
+	*vpp = nvp;
+	return (0);
 }
 
 static int hfs_statfs(struct mount *mp, struct statfs *sbp) {
