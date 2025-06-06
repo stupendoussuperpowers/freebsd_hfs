@@ -189,7 +189,6 @@ Result:
 -------------------------------------------------------------------------------*/
 
 OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr ) {
-	printf("Enter GetNode\n");
 	OSStatus err;
 	GetBlockProcPtr getNodeProc;
 	
@@ -205,9 +204,7 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 	nodePtr->blockSize = btreePtr->nodeSize;	// indicate the size of a node
 	
 	getNodeProc = btreePtr->getBlockProc;
-	printf("[enter] getNodeProc\n");
 	err = getNodeProc(btreePtr->fileRefNum, nodeNum, kGetBlock, nodePtr);
-	printf("[exit] getNodeProc\n");
 	if (err != noErr)
 	{
 		Panic ("GetNode: getNodeProc returned error.");
@@ -221,8 +218,6 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 	// Only call CheckNode if the node came from disk.
 	// If it was in the cache, we'll assume its already a valid node.
 	//
-	
-	printf("pre blockReadFromDisk\n");
 
 	if ( nodePtr->blockReadFromDisk )	// if we read it from disk then check it
 	{
@@ -269,8 +264,6 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 			goto ErrorExit;
 		}
 	}
-
-	printf("[exit] GetNode\n");
 
 	return noErr;
 

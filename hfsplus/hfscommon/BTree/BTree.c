@@ -235,10 +235,8 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc, GetBlockProc
 	header = (BTHeaderRec *)((u_long)nodeRec.buffer + sizeof(BTNodeDescriptor));
 
 	///////////////////////////// verify header /////////////////////////////////
-	printf("[pre] VerifyHeader\n");
 	err = VerifyHeader(filePtr, header);
 	M_ExitOnError(err);
-	printf("[post] VerifyHeader\n");
 
 	///////////////////// Initalize fields from header //////////////////////////
 

@@ -192,7 +192,6 @@ OSErr hfs_MountHFSVolume(struct hfsmount* hfsmp,
   if (error)
     goto MtVolErr;
 
-  printf("extentRefNum BTOpenPath\n");
   error = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
@@ -224,7 +223,6 @@ OSErr hfs_MountHFSVolume(struct hfsmount* hfsmp,
     goto MtVolErr;
   }
 
-  printf("catalog BTOpenPath\n");
   error = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
@@ -293,7 +291,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   /* Block size must be at least 512 and a power of 2 */
   blockSize = SWAP_BE32(vhp->blockSize);
   if (blockSize < 512 || (blockSize & (blockSize - 1)) != 0) {
-    printf("blockSize: %d\n", blockSize);
     return (EINVAL);
   }
 
@@ -315,7 +312,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   if ((disksize & (hfsmp->hfs_phys_block_size - 1)) ||
       (embeddedOffset & (hfsmp->hfs_phys_block_size - 1)) ||
       (SWAP_BE32(vhp->blockSize) < hfsmp->hfs_phys_block_size)) {
-    printf("cant live with physical block size.\n");
     return (ENXIO);
   }
   /*
@@ -395,19 +391,15 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
   
   if (retval) {
-    printf("getnewvnode: %d\n", retval);
     goto ErrorExit;
   }
 
   KASSERT(vcb->extentsRefNum != NULL, ("extentsRefNum is NULL."));
 
-  printf("[pre] extentRefNum BTOpenPath\n");
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeysPlus,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
-  printf("[post] extentRefNum BTOpenPath\n");
   if (retval) {
-    printf("MacToVFSError: %d\n", retval);
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
   }
@@ -432,20 +424,14 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
   }
- 
-  printf("\n\n");
-  printf("[pre] catalogRefNum BTOpenPath\n");
   
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareExtendedCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
   
-  printf("[post] catalogRefNum BTOpenPath\n");
   
-  printf("\n\n");
 
   if (retval) {
-    printf("mactovfs retval: %d\n", retval);
     VOP_UNLOCK(vcb->catalogRefNum);
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
@@ -461,8 +447,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   SWAP_HFS_PLUS_FORK_DATA(&vhp->allocationFile);
   cnattr.ca_blocks = vhp->allocationFile.totalBlocks;
 
-  printf("another getnewvnode\n");
-
   retval = hfs_getnewvnode(hfsmp, NULL, &cndesc, 0, &cnattr,
                            (struct cat_fork*)&vhp->allocationFile,
                            &vcb->allocationsRefNum);
@@ -473,12 +457,8 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
     goto ErrorExit;
   }
 
-  printf("pre cat idlookup:\n\n");
-
   /* Pick up volume name and create date */
   retval = cat_idlookup(hfsmp, kHFSRootFolderID, &cndesc, &cnattr, NULL);
-  
-  printf("cat_idlookup retval: %d\n", retval);
 
   if (retval) {
     VOP_UNLOCK(vcb->allocationsRefNum);
@@ -489,9 +469,7 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
 
   vcb->vcbCrDate = cnattr.ca_itime;
   vcb->volumeNameEncodingHint = cndesc.cd_encoding;
-  printf("\n pre bcopy\n");
   bcopy(cndesc.cd_nameptr, vcb->vcbVN, min(255, cndesc.cd_namelen));
-  printf("\n pre cat release\n");
   cat_releasedesc(&cndesc);
 
   /* mark the volume dirty (clear clean unmount bit) */
@@ -506,18 +484,12 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
    * all done with metadata files so we can unlock now...
    */
 
-  printf("\n starting to unlock\n");
   VOP_UNLOCK(vcb->allocationsRefNum);
-  printf("\nUnlocked allocations\n");
   VOP_UNLOCK(vcb->catalogRefNum);
-  printf("\nUnlocked catalogs\n");
   VOP_UNLOCK(vcb->extentsRefNum);
-  printf("\nUnlocked extents\n");
 
   /* setup private/hidden directory for unlinked files */
-  printf("\n[pre] FindMetaDataDirectory.\n");
   hfsmp->hfs_private_metadata_dir = FindMetaDataDirectory(vcb);
-  printf("\n[post] FindMetaDataDirectory.\n");
 
 #ifdef DARWIN_JOURNAL
   if (hfsmp->jnl && (hfsmp->hfs_fs_ronly == 0))
@@ -529,8 +501,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   {
     MarkVCBDirty(vcb);  // mark VCB dirty so it will be written
   }
-
-  printf("\nPost marking vcb dirty\n");
 
 #ifdef DARWIN_JOURNAL
   //
@@ -568,8 +538,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   }
 #endif /* DARWIN_JOURNAL */
 
-  printf("~~~Exiting MountHFSPlusVolume()\n");
-
   return (0);
 
 ErrorExit:
@@ -577,7 +545,6 @@ ErrorExit:
    * A fatal error occured and the volume cannot be mounted
    * release any resources that we aquired...
    */
-  printf("ErrorExit\n");
   InvalidateCatalogCache(vcb);
   ReleaseMetaFileVNode(vcb->allocationsRefNum);
   ReleaseMetaFileVNode(vcb->catalogRefNum);
@@ -669,9 +636,7 @@ int hfs_metafilelocking(struct hfsmount* hfsmp, u_long fileID, u_int flags, proc
   // int numOfLockedBuffs;
   int retval = 0;
 
-  printf("[Enter] hfs_metafilelocking\n");
   vcb = HFSTOVCB(hfsmp);
-  printf("fileId: %lu\n", fileID);
 
   switch (fileID) {
     case kHFSExtentsFileID:
@@ -714,9 +679,7 @@ int hfs_metafilelocking(struct hfsmount* hfsmp, u_long fileID, u_int flags, proc
     }
   } else {
     flags |= LK_RETRY; /* YYY: LK_RETRY is meaningful to vn_lock only */
-    printf("flags: %d\n", flags); 
     retval = vn_lock(vp, flags);
-    printf("vn_lock end: %d\n", retval);
     if (vp2 && retval == 0) {
       flags &= ~LK_INTERLOCK;
       retval = vn_lock(vp2, flags);
@@ -888,10 +851,8 @@ u_long FindMetaDataDirectory(ExtendedVCB* vcb) {
   }
 
   /* Lock catalog b-tree */
-  printf("lk exclusive\n");
   error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_EXCLUSIVE,
                               current_proc());
-  printf("error: %d\n", error);
   if (error)
     return (0);
 
@@ -900,19 +861,16 @@ u_long FindMetaDataDirectory(ExtendedVCB* vcb) {
 
   if (error == 0) {
     /* Unlock catalog b-tree */
-    printf("lk release\n");
     (void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE,
                               current_proc());
     hfsmp->hfs_metadata_createdate = hfsmp->hfs_privdir_attr.ca_itime;
     return (hfsmp->hfs_privdir_attr.ca_fileid);
   } else if (hfsmp->hfs_fs_ronly) {
-    printf("second lk release\n");
     /* Unlock catalog b-tree */
     (void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE,
                               current_proc());
     return (0);
   }
-  printf("error: %d\n", error);
   /* Setup the default attributes */
   bzero(&hfsmp->hfs_privdir_attr, sizeof(struct cat_attr));
   hfsmp->hfs_privdir_attr.ca_mode = S_IFDIR;
@@ -960,10 +918,7 @@ u_long FindMetaDataDirectory(ExtendedVCB* vcb) {
   hfsmp->hfs_privdir_attr.ca_fileid = out_desc.cd_cnid;
   hfsmp->hfs_metadata_createdate = vcb->vcbCrDate;
 
-  printf("\n\nGrail\n\n");
-
   if (VFS_ROOT(HFSTOVFS(hfsmp), 0, &dvp) == 0) {
-    printf("Holy?\n");
     dcp = VTOC(dvp);
     dcp->c_childhint = out_desc.cd_hint;
     dcp->c_nlink++;

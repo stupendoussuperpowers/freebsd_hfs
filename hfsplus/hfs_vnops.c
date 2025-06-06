@@ -210,7 +210,6 @@ loop:
 	struct bufobj v_bufobj = vp->v_bufobj;
 
 	for (bp = TAILQ_FIRST(&v_bufobj.bo_dirty.bv_hd); bp; bp = nbp) {
-		printf("[inside loop | bp: %p ]\n", bp);
 		nbp = TAILQ_NEXT(bp, b_bobufs);
 		if (_BUF_LOCK(bp, LK_EXCLUSIVE | LK_NOWAIT))
 			continue;

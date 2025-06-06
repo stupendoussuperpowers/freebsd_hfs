@@ -1008,8 +1008,6 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 
 	logBlockSize = GetLogicalBlockSize(vp);
 	blockposition = (off_t)ap->a_bn * (off_t)logBlockSize;
-	printf("[LogBlockSize: %ld]\n", logBlockSize);
-	printf("[BlockPosition: %ld]\n", blockposition);
 
 	lockExtBtree = overflow_extents(fp);
 	if (lockExtBtree) {
@@ -1041,7 +1039,6 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 					/* There's no valid block for this byte
 					 * offset: */
 
-					printf("starts before, %ld\n", (daddr_t)-1);
 					*ap->a_bnp = (daddr_t)-1;
 					bytesContAvail = invalid_range->rl_end +
 							 1 - blockposition;
@@ -1056,7 +1053,6 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 						/* There's actually no valid
 						 * information to be had
 						 * starting here: */
-						printf("starts before, %ld\n", (daddr_t)-1);
 						*ap->a_bnp = (daddr_t)-1;
 						if ((fp->ff_size >
 						     (invalid_range->rl_end +
@@ -1099,7 +1095,6 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			*ap->a_runb = 0;
 #endif
 	};
-	printf("bn:%ld -> bnp:%ld\n", ap->a_bn, *ap->a_bnp);
 	printf("Exit --- hfs_bmap ---\n");
 	return (retval);
 }
@@ -2304,16 +2299,10 @@ struct vop_pageout_args /* {
 
 void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
 	printf("=== hfs_bstrategy ===\n");
-	printf("bo: %p | bp: %p \n", bo, bp);
-
 	KASSERT(bo->bo_private != NULL, ("bo_private is null."));
-	
 	struct vnode *devvp;
 	devvp = (struct vnode *) bo->bo_private;
-
 	KASSERT(devvp != NULL, ("devvp is null."));
-
-	printf("devvp: %p\n", devvp);
 	// g_vfs_strategy(bo, bp);
 	VOP_STRATEGY(devvp, bp);
 }

@@ -66,7 +66,6 @@ OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize,
 	bTreePtr = (BTreeControlBlockPtr)VTOF(vp)->fcbBTCBPtr;
 	bTreePtr->nodeSize = blockSize;
 
-	printf("Exiting SetBTreeBlock\n");
 	return (E_NONE);
 }
 
@@ -76,12 +75,9 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 	struct buf *bp = NULL;
 
 	if (options & kGetEmptyBlock) {
-		printf("get blk\n");
 		bp = _GETBLK(vp, blockNum, block->blockSize, 0, 0);
 	} else {
-		printf("bp: %p | vp: %p | blockNum: %d | blockSize: %d\n", bp, vp, blockNum, block->blockSize);
 		retval = bread(vp, blockNum, block->blockSize, NOCRED, &bp);
-		printf("bread retval: %d\n", retval);
 	}
 	// DBG_ASSERT(bp != NULL);
 	// DBG_ASSERT(bp->b_data != NULL);
@@ -283,9 +279,7 @@ __private_extern__ OSStatus ReleaseBTreeBlock(FileReference vp,
 			}
 #else
 			{
-				printf("pre bdwrite, bp: %p \n", bp);
 				bdwrite(bp);
-				printf("post bdwrite\n");
 			}
 #endif
 		} else {

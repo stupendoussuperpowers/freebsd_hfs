@@ -98,12 +98,10 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	/* Get the real physical block size. */
 	if (VOP_IOCTL(devvp, DIOCGSECTORSIZE, (caddr_t)&secsize, 0, cred, p)) {
 		retval = ENXIO;
-		printf("first vop ioctl: %d\n", retval);
 		goto error_exit;
 	}
 	if (VOP_IOCTL(devvp, DIOCGMEDIASIZE, (caddr_t)&medsize, 0, cred, p)) {
 		retval = ENXIO;
-		printf("second vop ioctl: %d\n", retval);
 		goto error_exit;
 	}
 	
@@ -248,7 +246,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 					  &hfsmp->hfs_get_unicode,
 					  &hfsmp->hfs_get_hfsname);
 		if (retval) {
-			printf("hfs_getconverter: %d\n", retval);
 			//return (retval);
 			goto error_exit;
 		}
@@ -359,7 +356,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	}
 
 	if (retval) {
-		printf("retval: %d\n", retval);
 		// return (retval);
 		goto error_exit;
 	}
@@ -371,6 +367,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	if (ronly == 0)
 		(void)hfs_flushvolumeheader(hfsmp, MNT_WAIT, 0);
 	free(mdbp, M_TEMP);
+	printf("[x] hfs_mountfs\n");
 	return 0;
 
 error_exit:
@@ -611,7 +608,7 @@ static int hfs_cmount(struct mntarg *ma, void *data, uint64_t flags) {
 }
 
 static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
-	printf("---hfs_root---\n")
+	printf("---hfs_root---\n");
 
 	struct vnode* nvp;
 	int retval;
@@ -652,8 +649,8 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	return 0;
 }
 
-static int hfs_vget(struct mount *mp, ino_t ino, int flags,
-		    struct vnode **vpp) {
+static int hfs_vget(struct mount *mp, ino_t ino, int flags, struct vnode **vpp) {
+	printf("---hfs_vget---\n");
 	cnid_t cnid = ino;
 
 	/* Check for cnids that should't be exported. */
