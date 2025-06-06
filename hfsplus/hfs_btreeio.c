@@ -26,6 +26,7 @@
 #include <sys/systm.h>
 #include <sys/bio.h>
 #include <sys/buf.h>
+#include <sys/bufobj.h>
 #include <sys/kernel.h>
 #include <sys/mount.h>
 #include <sys/vnode.h>
@@ -51,6 +52,7 @@ static struct buf_ops buf_ops_hfs_btree = {
 	.bop_name = "buf_ops_hfs_btree", 
 	.bop_write = hfs_bwrite,
 	.bop_strategy = hfs_bstrategy,
+	.bop_bdflush = bufbdflush,
 };
 
 OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize,
@@ -281,7 +283,9 @@ __private_extern__ OSStatus ReleaseBTreeBlock(FileReference vp,
 			}
 #else
 			{
+				printf("pre bdwrite, bp: %p \n", bp);
 				bdwrite(bp);
+				printf("post bdwrite\n");
 			}
 #endif
 		} else {
