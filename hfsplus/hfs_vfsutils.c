@@ -1180,8 +1180,7 @@ u_int32_t GetLogicalBlockSize(struct vnode* vp) {
   return logBlockSize;
 }
 
-__private_extern__ u_int32_t hfs_freeblks(struct hfsmount* hfsmp,
-                                          int wantreserve) {
+u_int32_t hfs_freeblks(struct hfsmount* hfsmp, int wantreserve) {
   struct vcb_t* vcb = HFSTOVCB(hfsmp);
   u_int32_t freeblks;
 

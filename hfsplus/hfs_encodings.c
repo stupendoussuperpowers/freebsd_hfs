@@ -78,7 +78,7 @@ void hfs_converterinit(void) {
   SLIST_FIRST(&hfs_encoding_list)->refcount++;
 }
 
-static void hfs_converterdestroy(void) {
+void hfs_converterdestroy(void) {
   hfs_remconverter(0, kTextEncodingMacRoman);
   mtx_destroy(&hfs_encoding_list_slock);
 }

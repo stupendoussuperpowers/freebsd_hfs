@@ -104,7 +104,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		retval = ENXIO;
 		goto error_exit;
 	}
-	
+
 	blksize = secsize;
 	blkcnt = medsize / secsize;
 	disksize = medsize;
@@ -121,8 +121,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	bp = NULL;
 
-	hfsmp = (struct hfsmount *)MALLOC(sizeof(struct hfsmount), M_HFSMNT,
-					  M_WAITOK);
+	hfsmp = (struct hfsmount *)MALLOC(sizeof(struct hfsmount), M_HFSMNT, M_WAITOK);
 #if HFS_DIAGNOSTIC
 	printf("hfsmount: allocated struct hfsmount at %p\n", hfsmp);
 #endif
@@ -142,8 +141,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	hfsmp->hfs_phys_block_count = blkcnt;
 	hfsmp->hfs_media_writeable = 1;
 	hfsmp->hfs_fs_ronly = ronly;
-	hfsmp->hfs_unknownpermissions =
-	    ((mp->mnt_flag & MNT_UNKNOWNPERMISSIONS) != 0);
+	hfsmp->hfs_unknownpermissions = ((mp->mnt_flag & MNT_UNKNOWNPERMISSIONS) != 0);
 #ifdef DARWIN_QUOTA
 	for (i = 0; i < MAXQUOTAS; i++)
 		hfsmp->hfs_qfiles[i].qf_vp = NULLVP;
@@ -151,11 +149,9 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	// int error;
 	struct hfs_mount_args *args;
-	args = (struct hfs_mount_args *)MALLOC(sizeof(struct hfs_mount_args), M_HFSMNT,
-					M_WAITOK);
+	args = (struct hfs_mount_args *)MALLOC(sizeof(struct hfs_mount_args), M_HFSMNT, M_WAITOK);
 
-	
-	char *uidstr, *gidstr; 
+	char *uidstr, *gidstr;
 
 	retval = vfs_getopt(mp->mnt_optnew, "hfs_uid", (void **)&uidstr, NULL);
 	retval = vfs_getopt(mp->mnt_optnew, "hfs_gid", (void **)&gidstr, NULL);
@@ -170,16 +166,12 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	// return (45);
 
 	if (args) {
-		hfsmp->hfs_uid = (args->hfs_uid == (uid_t)VNOVAL)
-				     ? UNKNOWNUID
-				     : args->hfs_uid;
+		hfsmp->hfs_uid = (args->hfs_uid == (uid_t)VNOVAL) ? UNKNOWNUID : args->hfs_uid;
 
 		if (hfsmp->hfs_uid == 0xfffffffd)
 			hfsmp->hfs_uid = UNKNOWNUID;
 
-		hfsmp->hfs_gid = (args->hfs_gid == (gid_t)VNOVAL)
-				     ? UNKNOWNGID
-				     : args->hfs_gid;
+		hfsmp->hfs_gid = (args->hfs_gid == (gid_t)VNOVAL) ? UNKNOWNGID : args->hfs_gid;
 
 		if (hfsmp->hfs_gid == 0xfffffffd)
 			hfsmp->hfs_gid = UNKNOWNGID;
@@ -187,11 +179,9 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		if (args->hfs_mask != (mode_t)VNOVAL) {
 			hfsmp->hfs_dir_mask = args->hfs_mask & ALLPERMS;
 			if (args->flags & HFSFSMNT_NOXONFILES) {
-				hfsmp->hfs_file_mask =
-				    (args->hfs_mask & DEFFILEMODE);
+				hfsmp->hfs_file_mask = (args->hfs_mask & DEFFILEMODE);
 			} else {
-				hfsmp->hfs_file_mask =
-				    args->hfs_mask & ALLPERMS;
+				hfsmp->hfs_file_mask = args->hfs_mask & ALLPERMS;
 			}
 		} else {
 			hfsmp->hfs_dir_mask = UNKNOWNPERMISSIONS & ALLPERMS;
@@ -199,8 +189,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 			hfsmp->hfs_file_mask = UNKNOWNPERMISSIONS & DEFFILEMODE;
 			/* 0666: no --x by default? */
 		}
-		if ((args->flags != (int)VNOVAL) &&
-		    (args->flags & HFSFSMNT_WRAPPER))
+		if ((args->flags != (int)VNOVAL) && (args->flags & HFSFSMNT_WRAPPER))
 			mntwrapper = 1;
 	} else {
 		/* Even w/o explicit mount arguments, MNT_UNKNOWNPERMISSIONS
@@ -218,35 +207,29 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	hfsmp->hfs_media_writeable = 1;
 	/* YYY how to know if media is writable? */
 
-	int hfsStandard = (SWAP_BE16(mdbp->drSigWord) == kHFSSigWord) &&
-	    (mntwrapper || (SWAP_BE16(mdbp->drEmbedSigWord) != kHFSPlusSigWord));
-	
+	int hfsStandard = (SWAP_BE16(mdbp->drSigWord) == kHFSSigWord) && (mntwrapper || (SWAP_BE16(mdbp->drEmbedSigWord) != kHFSPlusSigWord));
+
 	int hfsEmbedded = SWAP_BE16(mdbp->drEmbedSigWord) == kHFSPlusSigWord;
 
 	/* Mount a standard HFS disk */
 	if (hfsStandard) {
 		/* HFS disks can only use 512 byte physical blocks */
 		if (blksize > kHFSBlockSize) {
-			printf(
-			    "HFS Mount: unsupported physical block size (%u)\n",
-			    (u_int)blksize);
+			printf("HFS Mount: unsupported physical block size (%u)\n", (u_int)blksize);
 			retval = EINVAL;
 			goto error_exit;
 		}
 		if (args) {
 			hfsmp->hfs_encoding = args->hfs_encoding;
-			HFSTOVCB(hfsmp)->volumeNameEncodingHint =
-			    args->hfs_encoding;
+			HFSTOVCB(hfsmp)->volumeNameEncodingHint = args->hfs_encoding;
 
 			/* establish the timezone */
 			gTimeZone = args->hfs_timezone;
 		}
 
-		retval = hfs_getconverter(hfsmp->hfs_encoding,
-					  &hfsmp->hfs_get_unicode,
-					  &hfsmp->hfs_get_hfsname);
+		retval = hfs_getconverter(hfsmp->hfs_encoding, &hfsmp->hfs_get_unicode, &hfsmp->hfs_get_hfsname);
 		if (retval) {
-			//return (retval);
+			// return (retval);
 			goto error_exit;
 		}
 
@@ -257,18 +240,14 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	} else { /* Mount an HFS Plus disk */
 		HFSPlusVolumeHeader *vhp;
 		off_t embeddedOffset;
-	#ifdef DARWIN_JOURNAL
+#ifdef DARWIN_JOURNAL
 		int jnl_disable = 0;
-	#endif
+#endif
 		/* Get the embedded Volume Header */
 		if (hfsEmbedded) {
-			embeddedOffset =
-			    SWAP_BE16(mdbp->drAlBlSt) * kHFSBlockSize;
-			
-			embeddedOffset +=
-			    (u_int64_t)SWAP_BE16(
-				mdbp->drEmbedExtent.startBlock) *
-			    (u_int64_t)SWAP_BE32(mdbp->drAlBlkSiz);
+			embeddedOffset = SWAP_BE16(mdbp->drAlBlSt) * kHFSBlockSize;
+
+			embeddedOffset += (u_int64_t)SWAP_BE16(mdbp->drEmbedExtent.startBlock) * (u_int64_t)SWAP_BE32(mdbp->drAlBlkSiz);
 
 			/*
 			 * If the embedded volume doesn't start on a block
@@ -283,20 +262,17 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 				goto error_exit;
 			}
 
-			disksize = (u_int64_t)SWAP_BE16(
-				       mdbp->drEmbedExtent.blockCount) *
-				   (u_int64_t)SWAP_BE32(mdbp->drAlBlkSiz);
+			disksize = (u_int64_t)SWAP_BE16(mdbp->drEmbedExtent.blockCount) * (u_int64_t)SWAP_BE32(mdbp->drAlBlkSiz);
 
 			hfsmp->hfs_phys_block_count = disksize / blksize;
 
-			mdb_offset = (embeddedOffset / blksize) +
-				     HFS_PRI_SECTOR(blksize);
-			
+			mdb_offset = (embeddedOffset / blksize) + HFS_PRI_SECTOR(blksize);
+
 			retval = bread(devvp, mdb_offset, blksize, cred, &bp);
-			
+
 			if (retval)
 				goto error_exit;
-			
+
 			bcopy(bp->b_data + HFS_PRI_OFFSET(blksize), mdbp, 512);
 			brelse(bp);
 			bp = NULL;
@@ -308,11 +284,10 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 #ifdef DARWIN_JOURNAL
 		// XXXdbg
-		
+
 		hfsmp->jnl = NULL;
 		hfsmp->jvp = NULL;
-		if (args != NULL && (args->flags & HFSFSMNT_EXTENDED_ARGS) &&
-		    args->journal_disable) {
+		if (args != NULL && (args->flags & HFSFSMNT_EXTENDED_ARGS) && args->journal_disable) {
 			jnl_disable = 1;
 		}
 #endif
@@ -326,15 +301,11 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		// (so we need to go find the .journal file, make sure it's
 		// the right size, re-sync up if it was moved, etc).
 
-		if ((SWAP_BE32(vhp->lastMountedVersion) == kHFSJMountVersion) &&
-		    (SWAP_BE32(vhp->attributes) & kHFSVolumeJournaledMask) &&
-		    !jnl_disable) {
+		if ((SWAP_BE32(vhp->lastMountedVersion) == kHFSJMountVersion) && (SWAP_BE32(vhp->attributes) & kHFSVolumeJournaledMask) && !jnl_disable) {
 			// if we're able to init the journal, mark the mount
 			// point as journaled.
-	
-			if (hfs_early_journal_init(hfsmp, vhp, args,
-						   embeddedOffset, mdb_offset,
-						   mdbp, cred) == 0) {
+
+			if (hfs_early_journal_init(hfsmp, vhp, args, embeddedOffset, mdb_offset, mdbp, cred) == 0) {
 				mp->mnt_flag |= MNT_JOURNALED;
 			} else {
 				retval = EINVAL;
@@ -344,11 +315,9 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		// XXXdbg
 #endif /* DARWIN_JOURNAL */
 
-		(void)hfs_getconverter(0, &hfsmp->hfs_get_unicode,
-				       &hfsmp->hfs_get_hfsname);
+		(void)hfs_getconverter(0, &hfsmp->hfs_get_unicode, &hfsmp->hfs_get_hfsname);
 
-		retval = hfs_MountHFSPlusVolume(hfsmp, vhp, embeddedOffset,
-						disksize, p, args);
+		retval = hfs_MountHFSPlusVolume(hfsmp, vhp, embeddedOffset, disksize, p, args);
 
 		if (retval) {
 			(void)hfs_relconverter(0);
@@ -378,8 +347,7 @@ error_exit:
 	(void)VOP_CLOSE(devvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
 #ifdef DARWIN_JOURNAL
 	if (hfsmp && hfsmp->jvp && hfsmp->jvp != hfsmp->hfs_devvp) {
-		(void)VOP_CLOSE(hfsmp->jvp, ronly ? FREAD : FREAD | FWRITE,
-				cred, p);
+		(void)VOP_CLOSE(hfsmp->jvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
 		hfsmp->jvp = NULL;
 	}
 #endif
@@ -407,15 +375,19 @@ static int hfs_mount(struct mount *mp) {
 	char *from;
 
 	vfs_getopt(mp->mnt_optnew, "fspath", (void **)&path, NULL);
-	vfs_getopt(mp->mnt_optnew, "from", (void **)&from, NULL);
+
+	// Enables us to use strncpy at the end when registering the mount.
+	if (strlen(path) >= MNAMELEN)
+		return (ENAMETOOLONG);
+
+	int from_size;
+	vfs_getopt(mp->mnt_optnew, "from", (void **)&from, &from_size);
 
 	proc_t *p = curthread;
 
 	struct vfsopt *tempopt;
 	printf("\n");
-	TAILQ_FOREACH(tempopt, mp->mnt_optnew, link) {
-		printf("%s => %s\n", tempopt->name, (char *)tempopt->value);
-	}
+	TAILQ_FOREACH(tempopt, mp->mnt_optnew, link) { printf("%s => %s\n", tempopt->name, (char *)tempopt->value); }
 
 #ifndef DARWIN
 	//
@@ -562,8 +534,7 @@ static int hfs_mount(struct mount *mp) {
 		if ((mp->mnt_flag & MNT_RDONLY) == 0)
 			accessmode |= VWRITE;
 		vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
-		if ((retval = VOP_ACCESS(devvp, accessmode, p->td_proc->p_ucred,
-					 p))) {
+		if ((retval = VOP_ACCESS(devvp, accessmode, p->td_proc->p_ucred, p))) {
 			vput(devvp);
 			return (retval);
 		}
@@ -591,18 +562,10 @@ static int hfs_mount(struct mount *mp) {
 	if (retval != E_NONE) {
 		return (retval);
 	}
-
-	/*
-		    (void)copyinstr(args.fspec, mp->mnt_stat.f_mntfromname,
-	   MNAMELEN - 1, &size); bzero(mp->mnt_stat.f_mntfromname + size,
-	   MNAMELEN - size); (void)hfs_statfs(mp, &mp->mnt_stat, p); return
-	   E_NONE; error_exit:
-		    */
-	return (45);
-}
-
-static int hfs_cmount(struct mntarg *ma, void *data, uint64_t flags) {
-	printf("---hfs_cmount---\n");
+	
+	// strncpy(mp->mnt_stat.f_mntfromname, path, MAXMNTLEN);
+	// mp->mnt_stat.f_mntfromname[MAXMNTLEN-1] = '\0';
+	vfs_mountedfrom(mp, path);
 
 	return (0);
 }
@@ -610,7 +573,7 @@ static int hfs_cmount(struct mntarg *ma, void *data, uint64_t flags) {
 static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
 	printf("---hfs_root---\n");
 
-	struct vnode* nvp;
+	struct vnode *nvp;
 	int retval;
 	UInt32 rootObjID = kRootDirID;
 
@@ -624,13 +587,29 @@ static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
 
 static int hfs_statfs(struct mount *mp, struct statfs *sbp) {
 	printf("---hfs_statfs---\n");
-	sbp->f_bsize = 4096;
-	sbp->f_blocks = 1000;
-	sbp->f_bfree = 500;
-	sbp->f_bavail = 500;
-	sbp->f_files = 100;
-	sbp->f_ffree = 50;
 
+	ExtendedVCB* vcb = VFSTOVCB(mp);
+	struct hfsmount* hfsmp = VFSTOHFS(mp);
+	u_long freeCNIDs;
+
+	freeCNIDs = (u_long)0xFFFFFFFF - (u_long)vcb->vcbNxtCNID;
+	
+	sbp->f_bsize = vcb->blockSize;
+	sbp->f_iosize = hfsmp->hfs_logBlockSize;
+	sbp->f_blocks = vcb->totalBlocks;
+	sbp->f_bfree = hfs_freeblks(hfsmp, 0);
+	sbp->f_bavail = hfs_freeblks(hfsmp, 1);
+	sbp->f_files = vcb->totalBlocks - 2;
+	sbp->f_ffree = ulmin(freeCNIDs, sbp->f_bavail);
+
+	sbp->f_type = 0;
+
+	if (sbp != &mp->mnt_stat) {
+		sbp->f_type = mp->mnt_vfc->vfc_typenum;
+		bcopy((caddr_t)mp->mnt_stat.f_mntonname, (caddr_t)&sbp->f_mntonname[0], MNAMELEN);
+		bcopy((caddr_t)mp->mnt_stat.f_mntfromname, (caddr_t)&sbp->f_mntfromname[0], MNAMELEN);
+	}
+	
 	return 0;
 }
 
@@ -654,8 +633,7 @@ static int hfs_vget(struct mount *mp, ino_t ino, int flags, struct vnode **vpp) 
 	cnid_t cnid = ino;
 
 	/* Check for cnids that should't be exported. */
-	if ((cnid < kHFSFirstUserCatalogNodeID) &&
-	    (cnid != kHFSRootFolderID && cnid != kHFSRootParentID)) {
+	if ((cnid < kHFSFirstUserCatalogNodeID) && (cnid != kHFSRootFolderID && cnid != kHFSRootParentID)) {
 		return ENOENT;
 	}
 	/* Don't export HFS Private Data dir. */
@@ -679,8 +657,7 @@ static int hfs_flushMDB(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	ByteCount namelen;
 
 	sectorsize = hfsmp->hfs_phys_block_size;
-	retval = bread(hfsmp->hfs_devvp, HFS_PRI_SECTOR(sectorsize), sectorsize,
-		       NOCRED, &bp);
+	retval = bread(hfsmp->hfs_devvp, HFS_PRI_SECTOR(sectorsize), sectorsize, NOCRED, &bp);
 	if (retval) {
 		if (bp)
 			brelse(bp);
@@ -696,8 +673,7 @@ static int hfs_flushMDB(struct hfsmount *hfsmp, int waitfor, int altflush) {
 		panic("hfs: standard hfs volumes should not be journaled!\n");
 #endif
 
-	mdb = (HFSMasterDirectoryBlock *)(bp->b_data +
-					  HFS_PRI_OFFSET(sectorsize));
+	mdb = (HFSMasterDirectoryBlock *)(bp->b_data + HFS_PRI_OFFSET(sectorsize));
 
 	mdb->drCrDate = SWAP_BE32(UTCToLocal(to_hfs_time(vcb->vcbCrDate)));
 	mdb->drLsMod = SWAP_BE32(UTCToLocal(to_hfs_time(vcb->vcbLsMod)));
@@ -747,13 +723,10 @@ static int hfs_flushMDB(struct hfsmount *hfsmp, int waitfor, int altflush) {
 		struct buf *alt_bp = NULL;
 		u_long altIDSector;
 
-		altIDSector =
-		    HFS_ALT_SECTOR(sectorsize, hfsmp->hfs_phys_block_count);
+		altIDSector = HFS_ALT_SECTOR(sectorsize, hfsmp->hfs_phys_block_count);
 
-		if (meta_bread(hfsmp->hfs_devvp, altIDSector, sectorsize,
-			       NOCRED, &alt_bp) == 0) {
-			bcopy(mdb, alt_bp->b_data + HFS_ALT_OFFSET(sectorsize),
-			      kMDBSize);
+		if (meta_bread(hfsmp->hfs_devvp, altIDSector, sectorsize, NOCRED, &alt_bp) == 0) {
+			bcopy(mdb, alt_bp->b_data + HFS_ALT_OFFSET(sectorsize), kMDBSize);
 
 			(void)VOP_BWRITE(alt_bp);
 		} else if (alt_bp) {
@@ -788,8 +761,7 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	// if (altflush)
 	// critical = 1;
 	sectorsize = hfsmp->hfs_phys_block_size;
-	priIDSector =
-	    (vcb->hfsPlusIOPosOffset / sectorsize) + HFS_PRI_SECTOR(sectorsize);
+	priIDSector = (vcb->hfsPlusIOPosOffset / sectorsize) + HFS_PRI_SECTOR(sectorsize);
 
 #ifdef DARWIN_JOURNAL
 	// XXXdbg
@@ -802,8 +774,7 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	}
 #endif
 
-	retval =
-	    meta_bread(hfsmp->hfs_devvp, priIDSector, sectorsize, NOCRED, &bp);
+	retval = meta_bread(hfsmp->hfs_devvp, priIDSector, sectorsize, NOCRED, &bp);
 	if (retval) {
 		if (bp)
 			brelse(bp);
@@ -822,52 +793,42 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 		journal_modify_block_start(hfsmp->jnl, bp);
 #endif
 
-	volumeHeader = (HFSPlusVolumeHeader *)((char *)bp->b_data +
-					       HFS_PRI_OFFSET(sectorsize));
+	volumeHeader = (HFSPlusVolumeHeader *)((char *)bp->b_data + HFS_PRI_OFFSET(sectorsize));
 
 	/*
 	 * For embedded HFS+ volumes, update create date if it changed
 	 * (ie from a setattrlist call)
 	 */
-	if ((vcb->hfsPlusIOPosOffset != 0) &&
-	    (SWAP_BE32(volumeHeader->createDate) != vcb->localCreateDate)) {
+	if ((vcb->hfsPlusIOPosOffset != 0) && (SWAP_BE32(volumeHeader->createDate) != vcb->localCreateDate)) {
 		struct buf *bp2;
 		HFSMasterDirectoryBlock *mdb;
 
-		retval =
-		    meta_bread(hfsmp->hfs_devvp, HFS_PRI_SECTOR(sectorsize),
-			       sectorsize, NOCRED, &bp2);
+		retval = meta_bread(hfsmp->hfs_devvp, HFS_PRI_SECTOR(sectorsize), sectorsize, NOCRED, &bp2);
 		if (retval) {
 			if (bp2)
 				brelse(bp2);
 			retval = 0;
 		} else {
-			mdb = (HFSMasterDirectoryBlock *)(bp2->b_data +
-							  HFS_PRI_OFFSET(
-							      sectorsize));
+			mdb = (HFSMasterDirectoryBlock *)(bp2->b_data + HFS_PRI_OFFSET(sectorsize));
 
 			if (SWAP_BE32(mdb->drCrDate) != vcb->localCreateDate) {
 #ifdef DARWIN_JOURNAL
 				// XXXdbg
 				if (hfsmp->jnl)
-					journal_modify_block_start(hfsmp->jnl,
-								   bp2);
+					journal_modify_block_start(hfsmp->jnl, bp2);
 #endif
 
-				mdb->drCrDate = SWAP_BE32(
-				    vcb->localCreateDate); /* pick up the new
-							      create date */
+				mdb->drCrDate = SWAP_BE32(vcb->localCreateDate); /* pick up the new
+										    create date */
 
 #ifdef DARWIN_JOURNAL
 				// XXXdbg
 				if (hfsmp->jnl) {
-					journal_modify_block_end(hfsmp->jnl,
-								 bp2);
+					journal_modify_block_end(hfsmp->jnl, bp2);
 				} else
 #endif
 				{
-					(void)VOP_BWRITE(
-					    bp2); /* write out the changes */
+					(void)VOP_BWRITE(bp2); /* write out the changes */
 				}
 			} else {
 				brelse(bp2); /* just release it */
@@ -900,9 +861,7 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	// XXXdbg
 
 	/* Note: only update the lower 16 bits worth of attributes */
-	volumeHeader->attributes =
-	    SWAP_BE32((SWAP_BE32(volumeHeader->attributes) & 0xFFFF0000) +
-		      (UInt16)vcb->vcbAtrb);
+	volumeHeader->attributes = SWAP_BE32((SWAP_BE32(volumeHeader->attributes) & 0xFFFF0000) + (UInt16)vcb->vcbAtrb);
 	volumeHeader->journalInfoBlock = SWAP_BE32(vcb->vcbJinfoBlock);
 #ifdef DARWIN_JOURNAL
 	if (hfsmp->jnl) {
@@ -910,11 +869,9 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	} else
 #endif
 	{
-		volumeHeader->lastMountedVersion =
-		    SWAP_BE32(kHFSPlusMountVersion);
+		volumeHeader->lastMountedVersion = SWAP_BE32(kHFSPlusMountVersion);
 	}
-	volumeHeader->createDate = SWAP_BE32(
-	    vcb->localCreateDate); /* volume create date is in local time */
+	volumeHeader->createDate = SWAP_BE32(vcb->localCreateDate); /* volume create date is in local time */
 	volumeHeader->modifyDate = SWAP_BE32(to_hfs_time(vcb->vcbLsMod));
 	volumeHeader->backupDate = SWAP_BE32(to_hfs_time(vcb->vcbVolBkUp));
 	volumeHeader->fileCount = SWAP_BE32(vcb->vcbFilCnt);
@@ -927,20 +884,16 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	volumeHeader->writeCount = SWAP_BE32(vcb->vcbWrCnt);
 	volumeHeader->encodingsBitmap = SWAP_BE64(vcb->encodingsBitmap);
 
-	if (bcmp(vcb->vcbFndrInfo, volumeHeader->finderInfo,
-		 sizeof(volumeHeader->finderInfo)) != 0) {
+	if (bcmp(vcb->vcbFndrInfo, volumeHeader->finderInfo, sizeof(volumeHeader->finderInfo)) != 0) {
 		// critical = 1;
-		bcopy(vcb->vcbFndrInfo, volumeHeader->finderInfo,
-		      sizeof(volumeHeader->finderInfo));
+		bcopy(vcb->vcbFndrInfo, volumeHeader->finderInfo, sizeof(volumeHeader->finderInfo));
 	}
 
 	/* Sync Extents over-flow file meta data */
 	fp = VTOF(vcb->extentsRefNum);
 	for (i = 0; i < kHFSPlusExtentDensity; i++) {
-		volumeHeader->extentsFile.extents[i].startBlock =
-		    SWAP_BE32(fp->ff_extents[i].startBlock);
-		volumeHeader->extentsFile.extents[i].blockCount =
-		    SWAP_BE32(fp->ff_extents[i].blockCount);
+		volumeHeader->extentsFile.extents[i].startBlock = SWAP_BE32(fp->ff_extents[i].startBlock);
+		volumeHeader->extentsFile.extents[i].blockCount = SWAP_BE32(fp->ff_extents[i].blockCount);
 	}
 	FTOC(fp)->c_flag &= ~C_MODIFIED;
 	volumeHeader->extentsFile.logicalSize = SWAP_BE64(fp->ff_size);
@@ -950,10 +903,8 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	/* Sync Catalog file meta data */
 	fp = VTOF(vcb->catalogRefNum);
 	for (i = 0; i < kHFSPlusExtentDensity; i++) {
-		volumeHeader->catalogFile.extents[i].startBlock =
-		    SWAP_BE32(fp->ff_extents[i].startBlock);
-		volumeHeader->catalogFile.extents[i].blockCount =
-		    SWAP_BE32(fp->ff_extents[i].blockCount);
+		volumeHeader->catalogFile.extents[i].startBlock = SWAP_BE32(fp->ff_extents[i].startBlock);
+		volumeHeader->catalogFile.extents[i].blockCount = SWAP_BE32(fp->ff_extents[i].blockCount);
 	}
 	FTOC(fp)->c_flag &= ~C_MODIFIED;
 	volumeHeader->catalogFile.logicalSize = SWAP_BE64(fp->ff_size);
@@ -963,10 +914,8 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 	/* Sync Allocation file meta data */
 	fp = VTOF(vcb->allocationsRefNum);
 	for (i = 0; i < kHFSPlusExtentDensity; i++) {
-		volumeHeader->allocationFile.extents[i].startBlock =
-		    SWAP_BE32(fp->ff_extents[i].startBlock);
-		volumeHeader->allocationFile.extents[i].blockCount =
-		    SWAP_BE32(fp->ff_extents[i].blockCount);
+		volumeHeader->allocationFile.extents[i].startBlock = SWAP_BE32(fp->ff_extents[i].startBlock);
+		volumeHeader->allocationFile.extents[i].blockCount = SWAP_BE32(fp->ff_extents[i].blockCount);
 	}
 	FTOC(fp)->c_flag &= ~C_MODIFIED;
 	volumeHeader->allocationFile.logicalSize = SWAP_BE64(fp->ff_size);
@@ -978,20 +927,15 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 		struct buf *alt_bp = NULL;
 		u_long altIDSector;
 
-		altIDSector =
-		    (vcb->hfsPlusIOPosOffset / sectorsize) +
-		    HFS_ALT_SECTOR(sectorsize, hfsmp->hfs_phys_block_count);
+		altIDSector = (vcb->hfsPlusIOPosOffset / sectorsize) + HFS_ALT_SECTOR(sectorsize, hfsmp->hfs_phys_block_count);
 
-		if (meta_bread(hfsmp->hfs_devvp, altIDSector, sectorsize,
-			       NOCRED, &alt_bp) == 0) {
+		if (meta_bread(hfsmp->hfs_devvp, altIDSector, sectorsize, NOCRED, &alt_bp) == 0) {
 #ifdef DARWIN_JOURNAL
 			if (hfsmp->jnl)
 				journal_modify_block_start(hfsmp->jnl, alt_bp);
 #endif
 
-			bcopy(volumeHeader,
-			      alt_bp->b_data + HFS_ALT_OFFSET(sectorsize),
-			      kMDBSize);
+			bcopy(volumeHeader, alt_bp->b_data + HFS_ALT_OFFSET(sectorsize), kMDBSize);
 
 #ifdef DARWIN_JOURNAL
 			if (hfsmp->jnl) {
@@ -1021,9 +965,7 @@ int hfs_flushvolumeheader(struct hfsmount *hfsmp, int waitfor, int altflush) {
 #ifdef DARWIN
 			/* When critical data changes, flush the device cache */
 			if (critical && (retval == 0)) {
-				(void)VOP_IOCTL(hfsmp->hfs_devvp,
-						DKIOCSYNCHRONIZECACHE, NULL,
-						FWRITE, NOCRED, current_proc());
+				(void)VOP_IOCTL(hfsmp->hfs_devvp, DKIOCSYNCHRONIZECACHE, NULL, FWRITE, NOCRED, current_proc());
 			}
 #endif
 		}
@@ -1108,18 +1050,27 @@ static int hfs_init(struct vfsconf *vfsp) {
 	printf("[===hfs_init===]\n");
 	static int done = 0;
 
-	if (done) 
+	if (done) {
 		return (0);
+	}
 
 	done = 1;
 
 	hfs_chashinit();
 	hfs_converterinit();
-//#if QUOTA
-//	dqinit();
-//#endif
+	// #if QUOTA
+	//	dqinit();
+	// #endif
 	(void)InitCatalogCache();
 
+	return (0);
+}
+
+static int hfs_uninit(struct vfsconf *vfsp) {
+	printf("--- hfs_uninit ---\n");
+	DestroyCatalogCache();
+	hfs_converterdestroy();
+	hfs_chashdestroy();
 	return (0);
 }
 
@@ -1131,13 +1082,13 @@ static int hfs_init(struct vfsconf *vfsp) {
 
 static struct vfsops hfs_vfsops = {
 	.vfs_mount = hfs_mount,
-	.vfs_cmount = hfs_cmount,
 	.vfs_root = hfs_root,
 	.vfs_statfs = hfs_statfs,
 	.vfs_sync = hfs_sync,
 	.vfs_unmount = hfs_unmount,
 	.vfs_vget = hfs_vget,
 	.vfs_init = hfs_init,
+	.vfs_uninit = hfs_uninit,
 };
 
 VFS_SET(hfs_vfsops, hfs, 0);
