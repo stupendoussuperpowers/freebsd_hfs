@@ -773,6 +773,7 @@ int hfs_owner_rights(struct hfsmount* hfsmp,
       (invokesuperuserstatus && (suser_cred(cred, PRIV_VFS_MOUNT) == 0))) { /* [3] */
     return (0);
   } else {
+    printf("has_owner_rights? No. EPERM:%d\n", EPERM);
     return (EPERM);
   }
 }

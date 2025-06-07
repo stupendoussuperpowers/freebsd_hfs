@@ -335,8 +335,6 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 
 	printf("[Enter] hfs_getcnode() ---\n");
 
-	return (EPERM);
-
 	/* Check if unmount in progress */
 	if (HFSTOVFS(hfsmp)->mnt_kern_flag & MNTK_UNMOUNT) {
 		*vpp = NULL;

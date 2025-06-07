@@ -384,6 +384,7 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 		
 		extd = &cp->c_datafork->ff_data.cf_extents[0];
 		if (extd->startBlock == HFSTOVCB(hfsmp)->vcbJinfoBlock || extd->startBlock == hfsmp->jnl_start) {
+			printf("attrlist EPERM: %d\n", EPERM);
 			return EPERM;
 		}
 	}

@@ -376,6 +376,24 @@ static int hfs_unlock(struct vop_unlock_args *ap) {
 	return (lockmgr(&cp->c_lock, LK_RELEASE, &vp->v_interlock));
 }
 
+void replace_desc(struct cnode *cp, struct cat_desc *cdp) {
+	/* First release allocated name buffer */
+	if (cp->c_desc.cd_flags & CD_HASBUF && cp->c_desc.cd_nameptr != 0) {
+		char *name = cp->c_desc.cd_nameptr;
+
+		cp->c_desc.cd_nameptr = 0;
+		cp->c_desc.cd_namelen = 0;
+		cp->c_desc.cd_flags &= ~CD_HASBUF;
+		FREE(name, M_TEMP);
+	}
+	bcopy(cdp, &cp->c_desc, sizeof(cp->c_desc));
+
+	/* Cnode now owns the name buffer */
+	cdp->cd_nameptr = 0;
+	cdp->cd_namelen = 0;
+	cdp->cd_flags &= ~CD_HASBUF;
+}
+
 struct vop_vector hfs_vnodeops = {
 	.vop_default =		&default_vnodeops,
 

@@ -42,6 +42,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	struct cdev *dev;
 	HFSMasterDirectoryBlock *mdbp;
 	int ronly;
+	struct hfs_mount_args *args = NULL;
 	int mntwrapper;
 	struct ucred *cred;
 	u_int64_t disksize;
@@ -148,7 +149,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 #endif
 
 	// int error;
-	struct hfs_mount_args *args;
 	args = (struct hfs_mount_args *)MALLOC(sizeof(struct hfs_mount_args), M_HFSMNT, M_WAITOK);
 
 	char *uidstr, *gidstr;
@@ -336,6 +336,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	if (ronly == 0)
 		(void)hfs_flushvolumeheader(hfsmp, MNT_WAIT, 0);
 	free(mdbp, M_TEMP);
+	free(args, M_HFSMNT);
 	printf("[x] hfs_mountfs\n");
 	return 0;
 
@@ -355,6 +356,10 @@ error_exit:
 		mtx_destroy(&hfsmp->hfs_renamelock);
 		free(hfsmp, M_HFSMNT);
 		mp->mnt_data = (qaddr_t)0;
+	}
+
+	if (args) {
+		free(args, M_HFSMNT);
 	}
 	return retval;
 }
