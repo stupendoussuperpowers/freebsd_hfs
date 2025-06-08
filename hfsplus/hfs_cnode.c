@@ -496,6 +496,8 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	int retval;
 	struct cdev *dev;
 	// proc_t* p = current_proc();
+	//
+	printf("attrp->file_id : %d\n",attrp->ca_fileid);
 
 	/* Bail when unmount is in progress */
 	if (mp->mnt_kern_flag & MNTK_UNMOUNT) {
@@ -520,6 +522,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		SET(cp2->c_flag, C_ALLOC);
 		cp2->c_cnid = descp->cd_cnid;
 		cp2->c_fileid = attrp->ca_fileid;
+		printf("cp2->c_fileid :%d = attrp->ca_fileid: %d\n", cp2->c_fileid, attrp->ca_fileid);
 		cp2->c_dev = dev;
 		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, 0);
 		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE, NULL))
@@ -547,6 +550,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 			}
 		} else /* allocated */ {
 			cp = cp2;
+			printf("cp->c_fileid: %d\n", cp->c_fileid);
 			hfs_chashinsert(cp);
 		}
 	}

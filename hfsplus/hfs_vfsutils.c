@@ -381,6 +381,8 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   cndesc.cd_namelen = strlen(hfs_extname);
   cndesc.cd_cnid = cnattr.ca_fileid = kHFSExtentsFileID;
 
+  printf("cndesc.cd_cnid : %d\n", cnattr.ca_fileid);
+
   SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
   cnattr.ca_blocks = vhp->extentsFile.totalBlocks;
 

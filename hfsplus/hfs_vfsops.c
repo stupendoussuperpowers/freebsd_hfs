@@ -2,6 +2,8 @@
 
 #include <sys/param.h>
 
+#include <sys/kdb.h>
+
 #include <sys/fcntl.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
@@ -73,19 +75,19 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 	retval = vinvalbuf(devvp, V_SAVE, 0, 0);
 	VOP_UNLOCK(devvp);
+	
 	if (retval) {
 		printf("vinvalbuf: %d\n", retval);
 		return retval;
 	}
 
 	ronly = (mp->mnt_flag & MNT_RDONLY) != 0;
-	// vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 
 	g_topology_lock();
 	retval = g_vfs_open(devvp, &cp, "hfs", ronly ? 0 : 1);
 	g_topology_unlock();
 	VOP_UNLOCK(devvp);
-
+	
 	if (retval) {
 		printf("g_vfs_open retval: %d\n", retval);
 		printf("EBUSY: %d | ENOENT: %d\n", EBUSY, ENOENT);
@@ -96,15 +98,23 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	hfsmp = NULL;
 	mdbp = NULL;
 
-	/* Get the real physical block size. */
+	printf("first ioctl\n");
 	if (VOP_IOCTL(devvp, DIOCGSECTORSIZE, (caddr_t)&secsize, 0, cred, p)) {
+		printf("First ioctl failed\n");
 		retval = ENXIO;
 		goto error_exit;
 	}
+	
+	printf("second ioctl\n");
 	if (VOP_IOCTL(devvp, DIOCGMEDIASIZE, (caddr_t)&medsize, 0, cred, p)) {
+		printf("Second ioctl failed\n");
 		retval = ENXIO;
 		goto error_exit;
 	}
+
+	printf("post vop ioctl\n");
+	
+	VOP_UNLOCK(devvp);
 
 	blksize = secsize;
 	blkcnt = medsize / secsize;
@@ -366,15 +376,9 @@ error_exit:
 
 static int hfs_mount(struct mount *mp) {
 	printf("[ENTER] ---hfs_mount---\n");
-	// struct hfsmount *hfsmp = NULL;
 	struct vnode *devvp; //, *rootvp;
-	// struct hfs_mount_args args;
-	// struct vfsoptlist *opts;
-	// struct vfsoptlist *optsold;
 	struct nameidata nd, *ndp = &nd;
-	// size_t size;
 	int retval = E_NONE;
-	// int flags;
 	mode_t accessmode;
 	char *path;
 	char *from;
@@ -399,122 +403,25 @@ static int hfs_mount(struct mount *mp) {
 	// Use NULL path to indicate we are mounting the root filesystem.
 	//
 	if (path == NULL) {
-		// if ((retval = bdevvp(rootdev, &rootvp))) {
-		//  printf("hfs_mountroot: can't find rootvp\n");
-		//  return (retval);
-		// }
-
-		// if ((retval = hfs_mountfs(rootvp, mp)) != 0)
-		//     return retval;
-
-		// (void)VFS_STATFS(mp, &mp->mnt_stat, p);
 		return 0;
 	}
 #endif
 
-	// if ((retval = copyin(data, (caddr_t)&args, sizeof(args))))
-	//  goto error_exit;
-	//
 	// If updating, check whether changing from read-only to
 	// read/write; if there is no device name, that's all we do.
 
-	/*
-		if (mp->mnt_flag & MNT_UPDATE) {
-			hfsmp = VFSTOHFS(mp);
-			if ((hfsmp->hfs_fs_ronly == 0) && (mp->mnt_flag &
-	MNT_RDONLY)) {
-				// use VFS_SYNC to push out System (btree) files
-				retval = VFS_SYNC(mp, MNT_WAIT,
-	p->td_proc->p_ucred, p); if (retval && ((mp->mnt_flag & MNT_FORCE) ==
-	0)) goto error_exit;
 
-				flags = WRITECLOSE;
-				if (mp->mnt_flag & MNT_FORCE)
-					flags |= FORCECLOSE;
-
-				if ((retval = hfs_flushfiles(mp, flags, p)))
-					goto error_exit;
-				hfsmp->hfs_fs_ronly = 1;
-				retval = hfs_flushvolumeheader(hfsmp, MNT_WAIT,
-	0);
-
-				// also get the volume bitmap blocks
-				if (!retval) {
-					vn_lock(
-					    hfsmp->hfs_devvp,
-					    LK_EXCLUSIVE |
-						LK_RETRY); // VOP_FSYNC takes vp
-	locked retval = VOP_FSYNC(hfsmp->hfs_devvp, NOCRED, MNT_WAIT, p);
-					VOP_UNLOCK(hfsmp->hfs_devvp);
-				}
-
-				if (retval) {
-					hfsmp->hfs_fs_ronly = 0;
-					goto error_exit;
-				}
-			}
-
-			if ((mp->mnt_flag & MNT_RELOAD) &&
-			    (retval = hfs_reload(mp, p->td_ucred, p))) {
-				goto error_exit;
-			}
-
-			if (hfsmp->hfs_fs_ronly &&
-			    (mp->mnt_kern_flag & MNTK_WANTRDWR)) {
-				//
-				// If upgrade to read-write by non-root, then
-	verify
-				// that user has necessary permissions on the
-	device.
-				//
-				if (p->td_proc->p_ucred->cr_uid != 0) {
-					devvp = hfsmp->hfs_devvp;
-					vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
-					if ((retval =
-						 VOP_ACCESS(devvp, VREAD |
-	VWRITE, p->td_proc->p_ucred, p))) { VOP_UNLOCK(devvp); goto error_exit;
-					}
-					VOP_UNLOCK(devvp);
-				}
-				retval = hfs_flushvolumeheader(hfsmp, MNT_WAIT,
-	0);
-
-				if (retval != E_NONE)
-					goto error_exit;
-
-				// only change hfs_fs_ronly after a successfull
-	write hfsmp->hfs_fs_ronly = 0;
-			}
-
-			if ((hfsmp->hfs_fs_ronly == 0) &&
-			    (HFSTOVCB(hfsmp)->vcbSigWord == kHFSPlusSigWord)) {
-				// setup private/hidden directory for unlinked
-	files hfsmp->hfs_private_metadata_dir =
-				    FindMetaDataDirectory(HFSTOVCB(hfsmp));
-	#ifdef DARWIN_JOURNAL
-				if (hfsmp->jnl)
-					hfs_remove_orphans(hfsmp);
-	#endif
-			}
-
-			if (args.fspec == 0) {
-				//
-				// Process export requests.
-				//
-				return vfs_export(mp, &args.export);
-			}
-		}
-	*/
 	//
 	// Not an update, or updating the name: look up the name
 	// and verify that it refers to a sensible block device.
 	//
 	//
+	//
+	
 	NDINIT(ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, from);
+	// NDINIT(ndp, LOOKUP, FOLLOW | LOCKLEAF, UIO_SYSSPACE, from);
 	retval = namei(ndp);
 	if (retval != E_NONE) {
-		// DBG_ERR(("hfs_mount: CAN'T GET DEVICE: %s, %x\n", args.fspec,
-		//	 ndp->ni_vp->v_rdev));
 		return (retval);
 	}
 
@@ -525,10 +432,6 @@ static int hfs_mount(struct mount *mp) {
 		vrele(devvp);
 		return (retval);
 	}
-	/*
-	#endif
-	*/
-	//
 	// If mount by non-root, then verify that user has
 	// necessary
 	// permissions on the device.
@@ -552,15 +455,8 @@ static int hfs_mount(struct mount *mp) {
 			printf("hfs_mountfs: %d\n", retval);
 			vrele(devvp);
 		}
+		printf("hfs_mountfs exitcode: %d\n", retval);
 	} else {
-		// if (devvp != hfsmp->hfs_devvp) {
-		// 	printf("devvp!=hfsmp->hfs_devvp\n");
-		// 	retval = EINVAL; // needs translation
-		// } else {
-		// 	printf("trying hfs_changefs\n");
-		// 	retval = hfs_changefs(mp, &args, p);
-		// 	printf("changefs: %d", retval);
-		// }
 		vrele(devvp);
 	}
 
@@ -568,9 +464,9 @@ static int hfs_mount(struct mount *mp) {
 		return (retval);
 	}
 	
-	// strncpy(mp->mnt_stat.f_mntfromname, path, MAXMNTLEN);
-	// mp->mnt_stat.f_mntfromname[MAXMNTLEN-1] = '\0';
+	printf("pre  |  vfs_mountedfrom\n");
 	vfs_mountedfrom(mp, path);
+	printf("post |  vfs_mountedfrom\n");
 
 	return (0);
 }

@@ -328,7 +328,7 @@ struct vop_setattrlist_args {
 	struct ucred *a_cred;
 	struct proc *a_p;
 }; 
-__private_extern__
+
 static int
 hfs_setattrlist(struct vop_setattrlist_args *ap)
 {
