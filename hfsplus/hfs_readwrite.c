@@ -819,6 +819,7 @@ struct vop_ioctl_args /* {
 				return EINVAL;
 
 			VOP_LEASE(vp, ap->a_p, ap->a_cred, LEASE_READ);
+			printf("locking %s:%d\n", __func__, __LINE__);
 			error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY, ap->a_p);
 			if (error)
 				return (error);
@@ -2298,15 +2299,18 @@ struct vop_pageout_args /* {
 #endif /* DARWIN */
 
 void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
-	printf("=== hfs_bstrategy ===\n");
+	printf("[Enter] hfs_bstrategy ===\n");
 	KASSERT(bo->bo_private != NULL, ("bo_private is null."));
 	struct vnode *devvp;
 	devvp = (struct vnode *) bo->bo_private;
 	KASSERT(devvp != NULL, ("devvp is null."));
 	// g_vfs_strategy(bo, bp);
 	VOP_STRATEGY(devvp, bp);
+	printf("[Exit] hfs_bstrategy ===\n");
 }
-	/*
+
+
+/*
  * Intercept B-Tree node writes to unswap them if necessary.
 #
 #vop_bwrite {

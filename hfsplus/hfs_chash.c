@@ -126,10 +126,8 @@ struct cnode *hfs_chashget(struct cdev *dev, ino_t inum, int wantrsrc, struct vn
 //	while(1) {
 
 loop:
-	printf("got to this loop\n");
 	mtx_lock(&hfs_chash_slock);
 	for (cp = CNODEHASH(dev2udev(dev), inum)->lh_first; cp; cp = cp->c_hash.le_next) {
-		printf("inside the loop\n");
 		if ((cp->c_fileid != inum) || (cp->c_dev != dev))
 			continue;
 		if (ISSET(cp->c_flag, C_ALLOC)) {
@@ -170,9 +168,7 @@ loop:
 
 		VI_LOCK(vp);
 		mtx_unlock(&hfs_chash_slock);
-		printf("pre vget(vp...\n");
 		if (vget(vp, LK_EXCLUSIVE | LK_INTERLOCK)) {
-			printf("if, yes\n");
 			goto loop;
 			//break;
 		}
@@ -182,7 +178,6 @@ loop:
 			 */
 			// kdb_enter("manual debug");	
 		//	kdb_enter(KDB_WHY_BREAK, "Break to debugger");
-			printf("pre vput\n");
 			vput(vp);
 			goto loop;
 			//break;
@@ -197,7 +192,6 @@ loop:
 		 * cnode lock.  So we need to check if the vnode
 		 * we wanted was created while we blocked.
 		 */
-		printf("watnrsrc\n");
 		if (wantrsrc && *rvpp == NULL && cp->c_rsrc_vp) {
 			error = vget(cp->c_rsrc_vp, 0);
 			vput(*vpp); /* ref no longer needed */
@@ -210,7 +204,6 @@ loop:
 
 		} else if (!wantrsrc && *vpp == NULL && cp->c_vp) {
 			error = vget(cp->c_vp, 0);
-			printf("error vget: %d\n", error);
 			vput(*rvpp); /* ref no longer needed */
 			*rvpp = NULL;
 			if (error) {
@@ -219,13 +212,9 @@ loop:
 			}
 			*vpp = cp->c_vp;
 		}
-		printf("returning cp: %p\n", cp);
 		return (cp);
 	}
-//		break;
-//	}
 
-	printf("pre mtx_unlock\n");
 	mtx_unlock(&hfs_chash_slock);
 	return (NULL);
 }

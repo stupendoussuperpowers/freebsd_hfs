@@ -567,7 +567,7 @@ static void ReleaseMetaFileVNode(struct vnode* vp) {
 
   if (vp && (fp = VTOF(vp))) {
     if (fp->fcbBTCBPtr != NULL) {
-      vn_lock(vp, LK_EXCLUSIVE | LK_RETRY); /* YYY wasn't in Darwin */
+      printf("locking %s:%d\n", __func__, __LINE__); vn_lock(vp, LK_EXCLUSIVE | LK_RETRY); /* YYY wasn't in Darwin */
       (void)BTClosePath(fp);
       VOP_UNLOCK(vp);
     }
@@ -681,10 +681,10 @@ int hfs_metafilelocking(struct hfsmount* hfsmp, u_long fileID, u_int flags, proc
     }
   } else {
     flags |= LK_RETRY; /* YYY: LK_RETRY is meaningful to vn_lock only */
-    retval = vn_lock(vp, flags);
+    printf("locking %s:%d\n", __func__, __LINE__); retval= vn_lock(vp, flags);
     if (vp2 && retval == 0) {
       flags &= ~LK_INTERLOCK;
-      retval = vn_lock(vp2, flags);
+      printf("locking %s:%d\n", __func__, __LINE__); retval = vn_lock(vp2, flags);
     }
   }
 

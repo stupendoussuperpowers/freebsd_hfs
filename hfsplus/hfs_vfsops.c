@@ -77,7 +77,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	VOP_UNLOCK(devvp);
 	
 	if (retval) {
-		printf("vinvalbuf: %d\n", retval);
 		return retval;
 	}
 
@@ -86,11 +85,9 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	g_topology_lock();
 	retval = g_vfs_open(devvp, &cp, "hfs", ronly ? 0 : 1);
 	g_topology_unlock();
-	VOP_UNLOCK(devvp);
-	
+
+	// VOP_UNLOCK(devvp);
 	if (retval) {
-		printf("g_vfs_open retval: %d\n", retval);
-		printf("EBUSY: %d | ENOENT: %d\n", EBUSY, ENOENT);
 		return (retval);
 	}
 
@@ -98,21 +95,15 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	hfsmp = NULL;
 	mdbp = NULL;
 
-	printf("first ioctl\n");
 	if (VOP_IOCTL(devvp, DIOCGSECTORSIZE, (caddr_t)&secsize, 0, cred, p)) {
-		printf("First ioctl failed\n");
 		retval = ENXIO;
 		goto error_exit;
 	}
 	
-	printf("second ioctl\n");
 	if (VOP_IOCTL(devvp, DIOCGMEDIASIZE, (caddr_t)&medsize, 0, cred, p)) {
-		printf("Second ioctl failed\n");
 		retval = ENXIO;
 		goto error_exit;
 	}
-
-	printf("post vop ioctl\n");
 	
 	VOP_UNLOCK(devvp);
 
@@ -122,9 +113,7 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	mdb_offset = HFS_PRI_SECTOR(blksize);
 
-	if ((retval = bread(devvp, mdb_offset, blksize, cred, &bp))) {
-		printf("bread retval: %d\n", retval);
-	}
+	bread(devvp, mdb_offset, blksize, cred, &bp);	
 
 	mdbp = (HFSMasterDirectoryBlock *)MALLOC(kMDBSize, M_TEMP, M_WAITOK);
 	bcopy(bp->b_data + HFS_PRI_OFFSET(blksize), mdbp, kMDBSize);
@@ -168,12 +157,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	args->hfs_uid = 999; // (uid_t)strtoul(uidstr, NULL, 10);
 	args->hfs_gid = 999; // (gid_t)strtoul(gidstr, NULL, 10);
-
-	// g_topology_lock();
-	// g_vfs_close(cp);
-	// g_topology_unlock();
-
-	// return (45);
 
 	if (args) {
 		hfsmp->hfs_uid = (args->hfs_uid == (uid_t)VNOVAL) ? UNKNOWNUID : args->hfs_uid;
@@ -339,15 +322,23 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		goto error_exit;
 	}
 
+
 	vfs_getnewfsid(mp);
 	mp->mnt_flag |= MNT_LOCAL;
 	devvp->v_rdev->si_mountpt = mp; /* used by vfs_mountedon() */
 
-	if (ronly == 0)
+	if (ronly == 0) {
 		(void)hfs_flushvolumeheader(hfsmp, MNT_WAIT, 0);
+	}
+	
 	free(mdbp, M_TEMP);
 	free(args, M_HFSMNT);
-	printf("[x] hfs_mountfs\n");
+
+	//if (cp != NULL) {
+		g_topology_lock();
+		g_vfs_close(cp);
+		g_topology_unlock();
+	//}
 	return 0;
 
 error_exit:
@@ -374,8 +365,9 @@ error_exit:
 	return retval;
 }
 
+
+
 static int hfs_mount(struct mount *mp) {
-	printf("[ENTER] ---hfs_mount---\n");
 	struct vnode *devvp; //, *rootvp;
 	struct nameidata nd, *ndp = &nd;
 	int retval = E_NONE;
@@ -395,7 +387,6 @@ static int hfs_mount(struct mount *mp) {
 	proc_t *p = curthread;
 
 	struct vfsopt *tempopt;
-	printf("\n");
 	TAILQ_FOREACH(tempopt, mp->mnt_optnew, link) { printf("%s => %s\n", tempopt->name, (char *)tempopt->value); }
 
 #ifndef DARWIN
@@ -415,11 +406,8 @@ static int hfs_mount(struct mount *mp) {
 	// Not an update, or updating the name: look up the name
 	// and verify that it refers to a sensible block device.
 	//
-	//
-	//
 	
 	NDINIT(ndp, LOOKUP, FOLLOW, UIO_SYSSPACE, from);
-	// NDINIT(ndp, LOOKUP, FOLLOW | LOCKLEAF, UIO_SYSSPACE, from);
 	retval = namei(ndp);
 	if (retval != E_NONE) {
 		return (retval);
@@ -452,10 +440,8 @@ static int hfs_mount(struct mount *mp) {
 	if ((mp->mnt_flag & MNT_UPDATE) == 0) {
 		retval = hfs_mountfs(devvp, mp);
 		if (retval != E_NONE) {
-			printf("hfs_mountfs: %d\n", retval);
 			vrele(devvp);
 		}
-		printf("hfs_mountfs exitcode: %d\n", retval);
 	} else {
 		vrele(devvp);
 	}
@@ -464,16 +450,13 @@ static int hfs_mount(struct mount *mp) {
 		return (retval);
 	}
 	
-	printf("pre  |  vfs_mountedfrom\n");
 	vfs_mountedfrom(mp, path);
-	printf("post |  vfs_mountedfrom\n");
-
 	return (0);
 }
 
-static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
-	printf("---hfs_root---\n");
 
+
+static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
 	struct vnode *nvp;
 	int retval;
 	UInt32 rootObjID = kRootDirID;
@@ -487,8 +470,6 @@ static int hfs_root(struct mount *mp, int flags, struct vnode **vpp) {
 }
 
 static int hfs_statfs(struct mount *mp, struct statfs *sbp) {
-	printf("---hfs_statfs---\n");
-
 	ExtendedVCB* vcb = VFSTOVCB(mp);
 	struct hfsmount* hfsmp = VFSTOHFS(mp);
 	u_long freeCNIDs;
@@ -515,22 +496,189 @@ static int hfs_statfs(struct mount *mp, struct statfs *sbp) {
 }
 
 static int hfs_sync(struct mount *mp, int waitfor) {
-	printf("---hfs_sync---\n");
-
+	printf("--- hfs_sync --- stub --- \n");
 	return 0;
 }
 
 static int hfs_unmount(struct mount *mp, int mntflags) {
-	printf("---hfs_unmount---\n");
+	struct hfsmount *hfsmp = VFSTOHFS(mp);
+	int retval = E_NONE;
+	int flags;
+	int force;
+	proc_t *p = curthread;
 
-	free(mp->mnt_data, M_HFSMNT);
-	mp->mnt_data = NULL;
+#ifdef DARWIN_JOURNAL
+	int started_tr = 0, grabbed_lock = 0;
+#endif
 
-	return 0;
+	flags = 0;
+	force = 0;
+	if (mntflags & MNT_FORCE) {
+		flags |= FORCECLOSE;
+		force = 1;
+	}
+
+	if ((retval = hfs_flushfiles(mp, flags, p)) && !force)
+		return (retval);
+
+	/*
+	 * Flush out the b-trees, volume bitmap and Volume Header
+	 */
+	if (hfsmp->hfs_fs_ronly == 0) {
+#ifdef DARWIN_JOURNAL
+		hfs_global_shared_lock_acquire(hfsmp);
+		grabbed_lock = 1;
+		if (hfsmp->jnl) {
+			journal_start_transaction(hfsmp->jnl);
+			started_tr = 1;
+		}
+#endif
+
+		vn_lock(HFSTOVCB(hfsmp)->catalogRefNum, LK_EXCLUSIVE | LK_RETRY);
+		retval = VOP_FSYNC(HFSTOVCB(hfsmp)->catalogRefNum, MNT_WAIT, p);
+		VOP_UNLOCK(HFSTOVCB(hfsmp)->catalogRefNum);
+		if (retval && !force)
+			goto err_exit;
+
+		vn_lock(HFSTOVCB(hfsmp)->extentsRefNum, LK_EXCLUSIVE | LK_RETRY);
+		retval = VOP_FSYNC(HFSTOVCB(hfsmp)->extentsRefNum, MNT_WAIT, p);
+		VOP_UNLOCK(HFSTOVCB(hfsmp)->extentsRefNum);
+		if (retval && !force)
+			goto err_exit;
+
+		// if we have an allocation file, sync it too so we don't leave dirty
+		// blocks around
+		if (HFSTOVCB(hfsmp)->allocationsRefNum) {
+			vn_lock(HFSTOVCB(hfsmp)->allocationsRefNum, LK_EXCLUSIVE | LK_RETRY);
+			retval = VOP_FSYNC(HFSTOVCB(hfsmp)->allocationsRefNum, MNT_WAIT, p);
+			VOP_UNLOCK(HFSTOVCB(hfsmp)->allocationsRefNum);
+			if (retval && !force)
+				goto err_exit;
+		}
+
+		vn_lock(hfsmp->hfs_devvp, LK_EXCLUSIVE | LK_RETRY);
+		retval = VOP_FSYNC(hfsmp->hfs_devvp, MNT_WAIT, p);
+		VOP_UNLOCK(hfsmp->hfs_devvp);
+		if (retval && !force)
+			goto err_exit;
+
+		/* See if this volume is damaged, is so do not unmount cleanly */
+		if (HFSTOVCB(hfsmp)->vcbFlags & kHFS_DamagedVolume) {
+			HFSTOVCB(hfsmp)->vcbAtrb &= ~kHFSVolumeUnmountedMask;
+		} else {
+			HFSTOVCB(hfsmp)->vcbAtrb |= kHFSVolumeUnmountedMask;
+		}
+
+		retval = hfs_flushvolumeheader(hfsmp, MNT_WAIT, 1);
+		if (retval) {
+			HFSTOVCB(hfsmp)->vcbAtrb &= ~kHFSVolumeUnmountedMask;
+			if (!force)
+				goto err_exit; /* could not flush everything */
+		}
+
+#ifdef DARWIN_JOURNAL
+		if (hfsmp->jnl) {
+			journal_end_transaction(hfsmp->jnl);
+			started_tr = 0;
+		}
+		if (grabbed_lock) {
+			hfs_global_shared_lock_release(hfsmp);
+			grabbed_lock = 0;
+		}
+#endif
+	}
+
+#ifdef DARWIN_JOURNAL
+	if (hfsmp->jnl) {
+		journal_flush(hfsmp->jnl);
+	}
+#endif
+
+	/*
+	 *	Invalidate our caches and release metadata vnodes
+	 */
+	(void)hfsUnmount(hfsmp, p);
+
+	if (HFSTOVCB(hfsmp)->vcbSigWord == kHFSSigWord)
+		(void)hfs_relconverter(hfsmp->hfs_encoding);
+
+#ifdef DARWIN_JOURNAL
+	// XXXdbg
+	if (hfsmp->jnl) {
+		journal_close(hfsmp->jnl);
+	}
+
+	if (hfsmp->jvp && hfsmp->jvp != hfsmp->hfs_devvp) {
+		retval = VOP_CLOSE(hfsmp->jvp, hfsmp->hfs_fs_ronly ? FREAD : FREAD | FWRITE, NOCRED, p);
+		vrele(hfsmp->jvp);
+		hfsmp->jvp = NULL;
+	}
+	// XXXdbg
+#endif /* DARWIN_JOURNAL */
+
+	// hfsmp->hfs_devvp->v_rdev->si_mountpoint = NULL; /* for vfs_mountedon() */
+	
+	// use g_vfs_close() ?
+	
+	g_topology_lock();
+	g_vfs_close(hfsmp->hfs_devvp->v_rdev->si_drv2);
+	g_topology_unlock();
+
+	retval = VOP_CLOSE(hfsmp->hfs_devvp, hfsmp->hfs_fs_ronly ? FREAD : FREAD | FWRITE, NOCRED, p);
+	if (retval && !force)
+		return (retval);
+
+	vrele(hfsmp->hfs_devvp);
+	mtx_destroy(&hfsmp->hfs_renamelock);
+	FREE(hfsmp, M_HFSMNT);
+	mp->mnt_data = (qaddr_t)0;
+	return (0);
+
+err_exit:
+#ifdef DARWIN_JOURNAL
+	if (hfsmp->jnl && started_tr) {
+		journal_end_transaction(hfsmp->jnl);
+	}
+	if (grabbed_lock) {
+		hfs_global_shared_lock_release(hfsmp);
+	}
+#endif
+	return retval;
+}
+
+int hfs_flushfiles(struct mount *mp, int flags, proc_t *p) {
+	register struct hfsmount *hfsmp;
+	int error;
+
+#if QUOTA
+	hfsmp = VFSTOHFS(mp);
+
+	if (mp->mnt_flag & MNT_QUOTA) {
+		if (error = vflush(mp, NULLVP, SKIPSYSTEM | flags))
+			return (error);
+		for (i = 0; i < MAXQUOTAS; i++) {
+			if (hfsmp->hfs_qfiles[i].qf_vp == NULLVP)
+				continue;
+			hfs_quotaoff(p, mp, i);
+		}
+		/*
+		 * Here we fall through to vflush again to ensure
+		 * that we have gotten rid of all the system vnodes.
+		 */
+	}
+#endif /* QUOTA */
+
+#ifdef DARWIN
+	error = vflush(mp, NULLVP, (SKIPSYSTEM | SKIPSWAP | flags));
+	error = vflush(mp, NULLVP, (SKIPSYSTEM | flags));
+#else
+	error = vflush(mp, 0, (SKIPSYSTEM | flags), p);
+#endif
+
+	return (error);
 }
 
 static int hfs_vget(struct mount *mp, ino_t ino, int flags, struct vnode **vpp) {
-	printf("---hfs_vget---\n");
 	cnid_t cnid = ino;
 
 	/* Check for cnids that should't be exported. */
@@ -948,7 +1096,6 @@ int hfs_volupdate(struct hfsmount *hfsmp, enum volop op, int inroot) {
 }
 
 static int hfs_init(struct vfsconf *vfsp) {
-	printf("[===hfs_init===]\n");
 	static int done = 0;
 
 	if (done) {
@@ -968,7 +1115,6 @@ static int hfs_init(struct vfsconf *vfsp) {
 }
 
 static int hfs_uninit(struct vfsconf *vfsp) {
-	printf("--- hfs_uninit ---\n");
 	DestroyCatalogCache();
 	hfs_converterdestroy();
 	hfs_chashdestroy();
@@ -980,6 +1126,14 @@ static int hfs_uninit(struct vfsconf *vfsp) {
 //  hfs_flushvolumeheaders
 //  hfs_flushMDB
 //
+
+/*
+* struct vfsops hfs_vfsops = {
+    .vfs_fhtovp = hfs_fhtovp,
+    .vfs_vptofh = hfs_vptofh,
+}
+*
+*/
 
 static struct vfsops hfs_vfsops = {
 	.vfs_mount = hfs_mount,

@@ -193,7 +193,6 @@ int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify,
 
 int hfs_btsync(struct vnode *vp, int sync_transaction)
 {
-	printf("\n[enter] hfs_btsync\n");
 	struct cnode *cp = VTOC(vp);
 	register struct buf *bp;
 	struct timeval tv;
@@ -234,23 +233,13 @@ loop:
 		}
 #endif /* DARWIN_JOURNAL */
 
-#ifdef DARWIN
-		if (sync_transaction && !(bp->b_flags & B_LOCKED)) {
-#else
 		if (sync_transaction) {
-#endif
 			VI_LOCK(vp);
 			BUF_UNLOCK(bp);
 			continue;
 		}
 
 		bremfree(bp);
-#ifdef DARWIN
-		bp->b_flags |= B_BUSY;
-		bp->b_flags &= ~B_LOCKED;
-#endif
-
-	//	splx(s);
 
 		(void) bawrite(bp);
 
@@ -274,8 +263,6 @@ static int hfs_getattr(struct vop_getattr_args *ap) {
 		struct ucred *a_cred;
 		proc_t *a_td;
 	} */
-
-	printf("---[hfs_getattr]---\n");
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct vattr *vap = ap->a_vap;
@@ -336,8 +323,6 @@ static int hfs_getattr(struct vop_getattr_args *ap) {
 		if (vp->v_type == VBLK || vp->v_type == VCHR)
 			vap->va_rdev = cp->c_rdev;
 	}
-	
-	printf("---[hfs_getattr]---\n");
 	return (0);
 }
 
@@ -348,15 +333,15 @@ static int hfs_lock1(struct vop_lock1_args *ap) {
 		char *file;
 		int line;
 	} */
-	printf("[Enter] hfs_lock1 \n");
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 
 	if (cp == NULL)
 		panic("hfs_lock: cnode in vnode is null\n");
 
-	printf("[Exit] hfs_lock1 \n");
-	return (lockmgr(&cp->c_lock, ap->a_flags, &vp->v_interlock));
+	//return 
+	int retval = (lockmgr(&cp->c_lock, ap->a_flags, &vp->v_interlock));	
+	return (retval);
 }
 
 static int hfs_unlock(struct vop_unlock_args *ap) {
@@ -368,11 +353,9 @@ static int hfs_unlock(struct vop_unlock_args *ap) {
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 
-	printf("[Exit] hfs_unlock \n");
 	if (cp == NULL)
 		panic("hfs_unlock: cnode in vnode is null\n");
 
-	printf("[Exit] hfs_unlock \n");
 	return (lockmgr(&cp->c_lock, LK_RELEASE, &vp->v_interlock));
 }
 

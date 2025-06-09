@@ -227,14 +227,7 @@ __private_extern__ OSStatus ReleaseBTreeBlock(FileReference vp,
 				 * to work.
 				 *
 				 */
-#ifdef DARWIN
-				extern int count_lock_queue __P((void));
-				/* Don't hog all the buffers... */
-				if (count_lock_queue() >
-				    kMaxLockedMetaBuffers) {
-#else
 				if (buf_dirty_count_severe()) {
-#endif
 					hfs_btsync(vp, HFS_SYNCTRANS);
 					/* Rollback sync time to cause a sync on
 					 * lock release... */
@@ -242,10 +235,6 @@ __private_extern__ OSStatus ReleaseBTreeBlock(FileReference vp,
 					    VTOF(vp),
 					    gettime() - (kMaxSecsForFsync + 1));
 				}
-
-#ifdef DARWIN
-				bp->b_flags |= B_LOCKED;
-#endif
 			}
 
 			/*
@@ -254,34 +243,7 @@ __private_extern__ OSStatus ReleaseBTreeBlock(FileReference vp,
 			 * free up some buffers and fall back to an asynchronous
 			 * write.
 			 */
-#ifdef DARWIN_JOURNAL
-			if (hfsmp->jnl) {
-				if (blockPtr->isModified == 0) {
-					panic("hfs: releaseblock: modified is "
-					      "0 but markdirty set! bp 0x%x\n",
-					      bp);
-				}
-				retval =
-				    journal_modify_block_end(hfsmp->jnl, bp);
-				blockPtr->isModified = 0;
-			} else
-#endif
-#ifdef DARWIN
-			    if (bdwrite_internal(bp, 1) != 0) {
-				hfs_btsync(vp, 0);
-				/* Rollback sync time to cause a sync on lock
-				 * release... */
-				(void)BTSetLastSync(VTOF(vp),
-						    gettime() -
-							(kMaxSecsForFsync + 1));
-				bp->b_flags &= ~B_LOCKED;
-				bawrite(bp);
-			}
-#else
-			{
-				bdwrite(bp);
-			}
-#endif
+			bdwrite(bp);
 		} else {
 #ifdef DARWIN_JOURNAL
 			// check if we had previously called
