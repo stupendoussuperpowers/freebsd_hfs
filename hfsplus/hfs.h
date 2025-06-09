@@ -220,6 +220,7 @@ typedef struct vfsVCB {
 
 /* This structure describes the HFS specific mount structure data. */
 typedef struct hfsmount {
+  struct g_consumer *hfs_cp;      /* g_consumer */
   u_int8_t hfs_fs_ronly; /* Whether this was mounted as read-initially  */
   u_int8_t hfs_unknownpermissions; /* Whether this was mounted with
                                       MNT_UNKNOWNPERMISSIONS */

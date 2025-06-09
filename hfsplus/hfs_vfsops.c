@@ -36,6 +36,16 @@
 
 static MALLOC_DEFINE(M_HFSMNT, "HFS mount", "HFS mount data");
 
+struct g_vfs_softc {
+	struct mtx	 sc_mtx;
+	struct bufobj	*sc_bo;
+	struct g_event	*sc_event;
+	int		 sc_active;
+	bool		 sc_orphaned;
+	int		 sc_enxio_active;
+	int		 sc_enxio_reported;
+};
+
 static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	proc_t *p = curthread;
 	int retval = E_NONE;
@@ -85,8 +95,8 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	g_topology_lock();
 	retval = g_vfs_open(devvp, &cp, "hfs", ronly ? 0 : 1);
 	g_topology_unlock();
-
-	// VOP_UNLOCK(devvp);
+	VOP_UNLOCK(devvp);
+	
 	if (retval) {
 		return (retval);
 	}
@@ -129,9 +139,12 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	mtx_init(&hfsmp->hfs_renamelock, "hfs rename lock", NULL, MTX_DEF);
 
+	hfsmp->hfs_cp = cp;
+	
 	/*
 	 *  Init the volume information structure
 	 */
+	
 	mp->mnt_data = (qaddr_t)hfsmp;
 	hfsmp->hfs_mp = mp;		  /* Make VFSTOHFS work */
 	hfsmp->hfs_vcb.vcb_hfsmp = hfsmp; /* Make VCBTOHFS work */
@@ -334,14 +347,15 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	free(mdbp, M_TEMP);
 	free(args, M_HFSMNT);
 
-	//if (cp != NULL) {
-		g_topology_lock();
-		g_vfs_close(cp);
-		g_topology_unlock();
-	//}
+
 	return 0;
 
 error_exit:
+	if (cp != NULL) {
+		g_topology_lock();
+		g_vfs_close(cp);
+		g_topology_unlock();
+	}
 	if (bp)
 		brelse(bp);
 	if (mdbp)
@@ -593,14 +607,15 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 		journal_flush(hfsmp->jnl);
 	}
 #endif
-
 	/*
 	 *	Invalidate our caches and release metadata vnodes
 	 */
-	(void)hfsUnmount(hfsmp, p);
 
-	if (HFSTOVCB(hfsmp)->vcbSigWord == kHFSSigWord)
+	(void) hfsUnmount(hfsmp, p);
+
+	if (HFSTOVCB(hfsmp)->vcbSigWord == kHFSSigWord){
 		(void)hfs_relconverter(hfsmp->hfs_encoding);
+	}
 
 #ifdef DARWIN_JOURNAL
 	// XXXdbg
@@ -616,27 +631,13 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	// XXXdbg
 #endif /* DARWIN_JOURNAL */
 
-	// hfsmp->hfs_devvp->v_rdev->si_mountpoint = NULL; /* for vfs_mountedon() */
-	
-	// use g_vfs_close() ?
-
-	printf("devvp: %p\n", hfsmp->hfs_devvp);
-	printf("v_rdev: %p\n", hfsmp->hfs_devvp->v_rdev);
-	printf("si_drv2: %p\n", hfsmp->hfs_devvp->v_rdev->si_drv2);
-
-	printf("is it null?: %d\n", hfsmp->hfs_devvp->v_rdev->si_drv2 == NULL);
-
 	g_topology_lock();
-	g_vfs_close(hfsmp->hfs_devvp->v_rdev->si_drv2);
+	g_vfs_close(hfsmp->hfs_cp);
 	g_topology_unlock();
-
-	retval = VOP_CLOSE(hfsmp->hfs_devvp, hfsmp->hfs_fs_ronly ? FREAD : FREAD | FWRITE, NOCRED, p);
-	if (retval && !force)
-		return (retval);
 
 	vrele(hfsmp->hfs_devvp);
 	mtx_destroy(&hfsmp->hfs_renamelock);
-	FREE(hfsmp, M_HFSMNT);
+	free(hfsmp, M_HFSMNT);
 	mp->mnt_data = (qaddr_t)0;
 	return (0);
 

@@ -572,7 +572,7 @@ static void ReleaseMetaFileVNode(struct vnode* vp) {
 
     /* release the node even if BTClosePath fails */
     vrele(vp);
-    vgone(vp);
+    // vgone(vp);
   }
 }
 
