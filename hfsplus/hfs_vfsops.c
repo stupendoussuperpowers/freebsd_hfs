@@ -610,7 +610,6 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	/*
 	 *	Invalidate our caches and release metadata vnodes
 	 */
-
 	(void) hfsUnmount(hfsmp, p);
 
 	if (HFSTOVCB(hfsmp)->vcbSigWord == kHFSSigWord){
@@ -635,6 +634,7 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	g_vfs_close(hfsmp->hfs_cp);
 	g_topology_unlock();
 
+	hfsmp->hfs_cp = NULL;
 	vrele(hfsmp->hfs_devvp);
 	mtx_destroy(&hfsmp->hfs_renamelock);
 	free(hfsmp, M_HFSMNT);

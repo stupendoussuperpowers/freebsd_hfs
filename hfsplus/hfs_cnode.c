@@ -278,9 +278,10 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
 		vrele(devvp);
 	}
 
-	vp->v_data = NULL;
-	vp->v_vnlock = &vp->v_lock; /* so that lock assertions won't panic */
+	free(vp->v_data, M_HFSNODE);
+	vp->v_data = 0;
 
+	vp->v_vnlock = &vp->v_lock; /* so that lock assertions won't panic */
 	/*
 	 * If there was only one active fork then we can release the cnode.
 	 */
@@ -498,11 +499,8 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	struct cnode *cp2 = NULL;
 	struct filefork *fp = NULL;
 	int allocated = 0;
-	// int i;
 	int retval;
 	struct cdev *dev;
-	// proc_t* p = current_proc();
-	//
 
 	/* Bail when unmount is in progress */
 	if (mp->mnt_kern_flag & MNTK_UNMOUNT) {
@@ -587,8 +585,9 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	new_vp->v_data = cp;
 
 	// Try this?
-	new_vp->v_mount = mp;
+	// new_vp->v_mount = mp;
 	//
+	insmntque(new_vp, mp);
 
 	new_vp->v_vnlock = &cp->c_lock;
 	if (wantrsrc && S_ISREG(cp->c_mode))

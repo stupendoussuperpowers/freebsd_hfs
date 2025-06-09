@@ -561,7 +561,8 @@ ErrorExit:
  */
 static void ReleaseMetaFileVNode(struct vnode* vp) {
   struct filefork* fp;
-  // proc_t* p = current_proc();
+
+  printf("ReleasemetaFileVNode called\n");
 
   if (vp && (fp = VTOF(vp))) {
     if (fp->fcbBTCBPtr != NULL) {
@@ -572,7 +573,11 @@ static void ReleaseMetaFileVNode(struct vnode* vp) {
 
     /* release the node even if BTClosePath fails */
     vrele(vp);
-    // vgone(vp);
+    // free(vp->v_mount, M_HFSCNODE);
+    // vp->v_mount = NULL;
+    printf("vp->v_mount :%p | vp->v_mount == NULL :%d | vp->v_mount == 0 :%d\n", vp->v_mount, vp->v_mount == NULL, vp->v_mount == 0);
+    vgone(vp);
+    printf("post vgone\n");
   }
 }
 
@@ -595,8 +600,11 @@ short hfsUnmount(register struct hfsmount* hfsmp, proc_t* p) {
   ReleaseMetaFileVNode(vcb->catalogRefNum);
   ReleaseMetaFileVNode(vcb->extentsRefNum);
 
+  // vgone(vcb);
+
   VCB_LOCK_DESTROY(vcb);
 
+  printf("returning unMount\n");
   return (retval);
 }
 
