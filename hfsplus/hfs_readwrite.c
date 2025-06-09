@@ -819,7 +819,6 @@ struct vop_ioctl_args /* {
 				return EINVAL;
 
 			VOP_LEASE(vp, ap->a_p, ap->a_cred, LEASE_READ);
-			printf("locking %s:%d\n", __func__, __LINE__);
 			error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY, ap->a_p);
 			if (error)
 				return (error);
@@ -980,7 +979,6 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 		int *a_runp;
 	} */
 
-	printf("--- hfs_bmap ---\n");
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct filefork *fp = VTOF(vp);
@@ -1096,7 +1094,6 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			*ap->a_runb = 0;
 #endif
 	};
-	printf("Exit --- hfs_bmap ---\n");
 	return (retval);
 }
 
@@ -1477,7 +1474,6 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 	/* {
 		struct buf *a_bp;
 	} */
-	printf("[Entry | hfs_strategy]\n");
 	register struct buf *bp = ap->a_bp;
 	register struct vnode *vp = bp->b_vp;
 	register struct cnode *cp = VTOC(vp);
@@ -1528,7 +1524,6 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 	// VOP_STRATEGY(vp, bp);
 	
 	BO_STRATEGY(&vp->v_bufobj, bp);
-	printf("[Exit | hfs_strategy]\n");
 	return (0);
 }
 
@@ -2299,16 +2294,13 @@ struct vop_pageout_args /* {
 #endif /* DARWIN */
 
 void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
-	printf("[Enter] hfs_bstrategy ===\n");
 	KASSERT(bo->bo_private != NULL, ("bo_private is null."));
 	struct vnode *devvp;
 	devvp = (struct vnode *) bo->bo_private;
 	KASSERT(devvp != NULL, ("devvp is null."));
 	// g_vfs_strategy(bo, bp);
 	VOP_STRATEGY(devvp, bp);
-	printf("[Exit] hfs_bstrategy ===\n");
 }
-
 
 /*
  * Intercept B-Tree node writes to unswap them if necessary.

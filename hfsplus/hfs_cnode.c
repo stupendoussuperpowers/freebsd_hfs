@@ -49,7 +49,7 @@
 #include <hfsplus/hfs_quota.h>
 
 // #ifdef DARWIN
-extern int prtactive;
+// extern int prtactive;
 // #endif
 
 extern void hfs_relnamehints(struct cnode *dcp);
@@ -75,8 +75,12 @@ __private_extern__ int static hfs_inactive(struct vop_inactive_args *ap) {
 	int started_tr = 0, grabbed_lock = 0;
 #endif
 
-	if (prtactive && vp->v_usecount != 0)
+	//if (prtactive && vp->v_usecount != 0)
+	//	printf("hfs_inactive: pushing active");
+	
+	if (vp->v_usecount != 0) {
 		printf("hfs_inactive: pushing active");
+	}
 
 	/*
 	 * Ignore nodes related to stale file handles.
@@ -212,7 +216,7 @@ out:
 /*
  * Reclaim a cnode so that it can be used for other purposes.
  */
-__private_extern__ static int hfs_reclaim(struct vop_reclaim_args *ap) {
+int hfs_reclaim(struct vop_reclaim_args *ap) {
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct vnode *devvp = NULL;
@@ -220,8 +224,12 @@ __private_extern__ static int hfs_reclaim(struct vop_reclaim_args *ap) {
 	struct filefork *altfp = NULL;
 	// int i;
 
-	if (prtactive && vp->v_usecount != 0)
+	if (vp->v_usecount != 0) {
 		printf("hfs_reclaim(): pushing active");
+	}
+
+	// if (prtactive && vp->v_usecount != 0)
+	//	printf("hfs_reclaim(): pushing active");
 
 	devvp = cp->c_devvp; /* For later releasing */
 
@@ -332,8 +340,6 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 	struct cnode *cp = NULL;
 	proc_t *p = current_proc();
 	int retval = E_NONE;
-
-	printf("[Enter] hfs_getcnode() ---\n");
 
 	/* Check if unmount in progress */
 	if (HFSTOVFS(hfsmp)->mnt_kern_flag & MNTK_UNMOUNT) {
@@ -497,7 +503,6 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	struct cdev *dev;
 	// proc_t* p = current_proc();
 	//
-	printf("attrp->file_id : %d\n",attrp->ca_fileid);
 
 	/* Bail when unmount is in progress */
 	if (mp->mnt_kern_flag & MNTK_UNMOUNT) {
@@ -522,7 +527,6 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		SET(cp2->c_flag, C_ALLOC);
 		cp2->c_cnid = descp->cd_cnid;
 		cp2->c_fileid = attrp->ca_fileid;
-		printf("cp2->c_fileid :%d = attrp->ca_fileid: %d\n", cp2->c_fileid, attrp->ca_fileid);
 		cp2->c_dev = dev;
 		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, 0);
 		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE, NULL))
@@ -550,7 +554,6 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 			}
 		} else /* allocated */ {
 			cp = cp2;
-			printf("cp->c_fileid: %d\n", cp->c_fileid);
 			hfs_chashinsert(cp);
 		}
 	}

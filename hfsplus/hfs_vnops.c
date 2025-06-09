@@ -33,6 +33,7 @@
 
 int hfs_bmap(struct vop_bmap_args*);
 int hfs_strategy(struct vop_strategy_args*);
+int hfs_reclaim(struct vop_reclaim_args*);
 
 int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor) {
 	struct cnode *cp = VTOC(vp);
@@ -412,7 +413,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_read =		VOP_EOPNOTSUPP,
 	.vop_readdir =		VOP_EOPNOTSUPP,
 	.vop_readlink =		VOP_EOPNOTSUPP,
-	.vop_reclaim =		VOP_EOPNOTSUPP,
+	.vop_reclaim =		hfs_reclaim,
 	.vop_remove =		VOP_EOPNOTSUPP,
 	.vop_rename =		VOP_EOPNOTSUPP,
 	.vop_rmdir =		VOP_EOPNOTSUPP,

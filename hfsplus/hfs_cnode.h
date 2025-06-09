@@ -256,6 +256,8 @@ hfs_chashget(struct cdev* dev,
              struct vnode** vpp,
              struct vnode** rvpp);
 
+int hfs_reclaim(struct vop_reclaim_args*);
+
 #endif /* __APPLE_API_PRIVATE */
 #endif /* _KERNEL */
 

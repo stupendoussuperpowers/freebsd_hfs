@@ -122,9 +122,9 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	bp = NULL;
 
 	hfsmp = (struct hfsmount *)MALLOC(sizeof(struct hfsmount), M_HFSMNT, M_WAITOK);
-#if HFS_DIAGNOSTIC
-	printf("hfsmount: allocated struct hfsmount at %p\n", hfsmp);
-#endif
+// #if HFS_DIAGNOSTIC
+//	printf("hfsmount: allocated struct hfsmount at %p\n", hfsmp);
+// #endif
 	bzero(hfsmp, sizeof(struct hfsmount));
 
 	mtx_init(&hfsmp->hfs_renamelock, "hfs rename lock", NULL, MTX_DEF);
@@ -450,7 +450,7 @@ static int hfs_mount(struct mount *mp) {
 		return (retval);
 	}
 	
-	vfs_mountedfrom(mp, path);
+	vfs_mountedfrom(mp, from);
 	return (0);
 }
 
@@ -619,7 +619,13 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	// hfsmp->hfs_devvp->v_rdev->si_mountpoint = NULL; /* for vfs_mountedon() */
 	
 	// use g_vfs_close() ?
-	
+
+	printf("devvp: %p\n", hfsmp->hfs_devvp);
+	printf("v_rdev: %p\n", hfsmp->hfs_devvp->v_rdev);
+	printf("si_drv2: %p\n", hfsmp->hfs_devvp->v_rdev->si_drv2);
+
+	printf("is it null?: %d\n", hfsmp->hfs_devvp->v_rdev->si_drv2 == NULL);
+
 	g_topology_lock();
 	g_vfs_close(hfsmp->hfs_devvp->v_rdev->si_drv2);
 	g_topology_unlock();
@@ -647,9 +653,10 @@ err_exit:
 }
 
 int hfs_flushfiles(struct mount *mp, int flags, proc_t *p) {
-	register struct hfsmount *hfsmp;
+	// register struct hfsmount *hfsmp;
 	int error;
 
+	/*
 #if QUOTA
 	hfsmp = VFSTOHFS(mp);
 
@@ -661,12 +668,13 @@ int hfs_flushfiles(struct mount *mp, int flags, proc_t *p) {
 				continue;
 			hfs_quotaoff(p, mp, i);
 		}
-		/*
-		 * Here we fall through to vflush again to ensure
-		 * that we have gotten rid of all the system vnodes.
-		 */
+		
+		 // Here we fall through to vflush again to ensure
+		 // that we have gotten rid of all the system vnodes.
+		 
 	}
-#endif /* QUOTA */
+#endif // QUOTA 
+*/ 
 
 #ifdef DARWIN
 	error = vflush(mp, NULLVP, (SKIPSYSTEM | SKIPSWAP | flags));

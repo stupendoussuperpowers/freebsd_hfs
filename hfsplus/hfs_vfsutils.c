@@ -381,8 +381,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   cndesc.cd_namelen = strlen(hfs_extname);
   cndesc.cd_cnid = cnattr.ca_fileid = kHFSExtentsFileID;
 
-  printf("cndesc.cd_cnid : %d\n", cnattr.ca_fileid);
-
   SWAP_HFS_PLUS_FORK_DATA(&vhp->extentsFile);
   cnattr.ca_blocks = vhp->extentsFile.totalBlocks;
 
@@ -567,7 +565,7 @@ static void ReleaseMetaFileVNode(struct vnode* vp) {
 
   if (vp && (fp = VTOF(vp))) {
     if (fp->fcbBTCBPtr != NULL) {
-      printf("locking %s:%d\n", __func__, __LINE__); vn_lock(vp, LK_EXCLUSIVE | LK_RETRY); /* YYY wasn't in Darwin */
+      vn_lock(vp, LK_EXCLUSIVE | LK_RETRY); /* YYY wasn't in Darwin */
       (void)BTClosePath(fp);
       VOP_UNLOCK(vp);
     }
@@ -681,10 +679,10 @@ int hfs_metafilelocking(struct hfsmount* hfsmp, u_long fileID, u_int flags, proc
     }
   } else {
     flags |= LK_RETRY; /* YYY: LK_RETRY is meaningful to vn_lock only */
-    printf("locking %s:%d\n", __func__, __LINE__); retval= vn_lock(vp, flags);
+    retval= vn_lock(vp, flags);
     if (vp2 && retval == 0) {
       flags &= ~LK_INTERLOCK;
-      printf("locking %s:%d\n", __func__, __LINE__); retval = vn_lock(vp2, flags);
+      retval = vn_lock(vp2, flags);
     }
   }
 
@@ -775,7 +773,6 @@ int hfs_owner_rights(struct hfsmount* hfsmp,
       (invokesuperuserstatus && (suser_cred(cred, PRIV_VFS_MOUNT) == 0))) { /* [3] */
     return (0);
   } else {
-    printf("has_owner_rights? No. EPERM:%d\n", EPERM);
     return (EPERM);
   }
 }
@@ -1297,7 +1294,7 @@ __private_extern__ static void hfs_savenamehint(struct cnode* dcp,
  * Release the directory entry name hint for a given index.
  * The directory cnode (dcp) must be locked.
  */
-__private_extern__ static void hfs_relnamehint(struct cnode* dcp, int index) {
+static void hfs_relnamehint(struct cnode* dcp, int index) {
   struct hfs_index* entry;
   void* self;
 
@@ -1316,7 +1313,7 @@ __private_extern__ static void hfs_relnamehint(struct cnode* dcp, int index) {
 /*
  * Release all directory entry name hints.
  */
-__private_extern__ static void hfs_relnamehints(struct cnode* dcp) {
+void hfs_relnamehints(struct cnode* dcp) {
   struct hfs_index* entry;
   struct hfs_index* next;
 
