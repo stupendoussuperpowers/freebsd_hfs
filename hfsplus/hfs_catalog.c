@@ -1615,9 +1615,7 @@ lastitem:
 /*
  *
  */
-int
-cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp,
-		struct uio *uio, int *eofflag)
+int cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp, struct uio *uio, int *eofflag)
 {
 	ExtendedVCB *vcb = HFSTOVCB(hfsmp);
 	BTreeIterator * iterator;
@@ -1647,12 +1645,6 @@ cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp,
 		goto cleanup;
 
 	state.cbs_hiddenDirID = hfsmp->hfs_private_metadata_dir;
-#ifdef DARWIN_JOURNAL
-	if (hfsmp->jnl) {
-		state.cbs_hiddenJournalID = hfsmp->hfs_jnlfileid;
-		state.cbs_hiddenInfoBlkID = hfsmp->hfs_jnlinfoblkid;
-	}
-#endif
 
 	state.cbs_lastoffset = cip->currentOffset;
 	state.cbs_vcb = vcb;

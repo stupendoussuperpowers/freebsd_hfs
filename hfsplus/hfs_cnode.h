@@ -44,23 +44,16 @@
  * The filefork is used to represent an HFS file fork (data or resource).
  * Reading or writing any of these fields requires holding cnode lock.
  */
-struct filefork
-{
-  struct cnode* ff_cp; /* cnode associated with this fork */
-  struct rl_head
-    ff_invalidranges; /* Areas of disk that should read back as zeroes */
-  union
-  {
-#ifdef DARWIN
-    struct hfslockf* ffu_lockf; /* Head of byte-level lock list. */
-#else
-    struct lockf* ffu_lockf; /* Head of byte-level lock list. */
-#endif
-    void* ffu_sysdata;    /* private data for system files */
-    char* ffu_symlinkptr; /* symbolic link pathname */
-  } ff_un;
-  struct cat_fork ff_data;
-  u_int32_t ff_unallocblocks; /* unallocated blocks (until cmap) */
+struct filefork {
+	struct cnode *ff_cp;		 /* cnode associated with this fork */
+	struct rl_head ff_invalidranges; /* Areas of disk that should read back as zeroes */
+	union {
+		struct lockf *ffu_lockf; /* Head of byte-level lock list. */
+		void *ffu_sysdata;	 /* private data for system files */
+		char *ffu_symlinkptr;	 /* symbolic link pathname */
+	} ff_un;
+	struct cat_fork ff_data;
+	u_int32_t ff_unallocblocks; /* unallocated blocks (until cmap) */
 };
 
 /* Aliases for common fields */
@@ -80,12 +73,11 @@ struct filefork
 /*
  * Directory index entry
  */
-struct hfs_index
-{
-  SLIST_ENTRY(hfs_index) hi_link;
-  int hi_index;
-  void* hi_thread; /* thread that created index entry */
-  char hi_name[1];
+struct hfs_index {
+	SLIST_ENTRY(hfs_index) hi_link;
+	int hi_index;
+	void *hi_thread; /* thread that created index entry */
+	char hi_name[1];
 };
 
 /*
@@ -94,24 +86,23 @@ struct hfs_index
  *
  * Reading or writing any of these fields requires holding c_lock.
  */
-struct cnode
-{
-  struct lock c_lock;       /* cnode's lock */
-  LIST_ENTRY(cnode) c_hash; /* cnode's hash chain */
-  u_int32_t c_flag;         /* cnode's runtime flags */
-  struct vnode* c_vp;       /* vnode for data fork or dir */
-  struct vnode* c_rsrc_vp;  /* vnode for resource fork */
-  struct vnode* c_devvp;    /* vnode for block I/O */
-  struct cdev* c_dev;       /* cnode's device */
-//#ifdef DARWIN_QUOTA
-  struct dquot* c_dquot[MAXQUOTAS]; /* cnode's quota info */
-//#endif
-  cnid_t c_childhint;     /* catalog hint for children */
-  struct cat_desc c_desc; /* cnode's descriptor */
-  struct cat_attr c_attr; /* cnode's attributes */
-  SLIST_HEAD(hfs_indexhead, hfs_index) c_indexlist; /* directory index list */
-  struct filefork* c_datafork;                      /* cnode's data fork */
-  struct filefork* c_rsrcfork;                      /* cnode's rsrc fork */
+struct cnode {
+	struct lock c_lock;	  /* cnode's lock */
+	LIST_ENTRY(cnode) c_hash; /* cnode's hash chain */
+	u_int32_t c_flag;	  /* cnode's runtime flags */
+	struct vnode *c_vp;	  /* vnode for data fork or dir */
+	struct vnode *c_rsrc_vp;  /* vnode for resource fork */
+	struct vnode *c_devvp;	  /* vnode for block I/O */
+	struct cdev *c_dev;	  /* cnode's device */
+	// #ifdef DARWIN_QUOTA
+	struct dquot *c_dquot[MAXQUOTAS]; /* cnode's quota info */
+	// #endif
+	cnid_t c_childhint;				  /* catalog hint for children */
+	struct cat_desc c_desc;				  /* cnode's descriptor */
+	struct cat_attr c_attr;				  /* cnode's attributes */
+	SLIST_HEAD(hfs_indexhead, hfs_index) c_indexlist; /* directory index list */
+	struct filefork *c_datafork;			  /* cnode's data fork */
+	struct filefork *c_rsrcfork;			  /* cnode's rsrc fork */
 };
 
 /* Aliases for common cnode fields */
@@ -139,9 +130,9 @@ struct cnode
 #define c_zftimeout c_childhint
 
 /* Runtime cnode flags (kept in c_flag) */
-#define C_ACCESS 0x0001   /* Access time update request */
-#define C_CHANGE 0x0002   /* Change time update request */
-#define C_UPDATE 0x0004   /* Modification time update request */
+#define C_ACCESS 0x0001	  /* Access time update request */
+#define C_CHANGE 0x0002	  /* Change time update request */
+#define C_UPDATE 0x0004	  /* Modification time update request */
 #define C_MODIFIED 0x0008 /* CNode has been modified */
 #define C_ATIMEMOD 0x0010 /* Access time has been modified */
 
@@ -149,12 +140,12 @@ struct cnode
 #define C_DELETED 0x0040  /* CNode has been marked to be deleted */
 #define C_HARDLINK 0x0080 /* CNode is a hard link */
 
-#define C_ALLOC 0x0100    /* CNode is being allocated */
-#define C_WALLOC 0x0200   /* Waiting for allocation to finish */
+#define C_ALLOC 0x0100	  /* CNode is being allocated */
+#define C_WALLOC 0x0200	  /* Waiting for allocation to finish */
 #define C_TRANSIT 0x0400  /* CNode is getting recycled  */
 #define C_WTRANSIT 0x0800 /* Waiting for cnode getting recycled  */
 
-#define C_RENAME 0x1000     /* CNode is being renamed */
+#define C_RENAME 0x1000	    /* CNode is being renamed */
 #define C_ZFWANTSYNC 0x2000 /* fsync requested and file has holes */
 
 #define ZFTIMELIMIT (5 * 60)
@@ -162,10 +153,9 @@ struct cnode
 /*
  * Convert between cnode pointers and vnode pointers
  */
-#define VTOC(vp) ((struct cnode*)(vp)->v_data)
+#define VTOC(vp) ((struct cnode *)(vp)->v_data)
 
-#define CTOV(cp, rsrc)                                                         \
-  (((rsrc) && S_ISREG((cp)->c_mode)) ? (cp)->c_rsrc_vp : (cp)->c_vp)
+#define CTOV(cp, rsrc) (((rsrc) && S_ISREG((cp)->c_mode)) ? (cp)->c_rsrc_vp : (cp)->c_vp)
 
 /*
  * Convert between vnode pointers and file forks
@@ -175,12 +165,9 @@ struct cnode
 
 #define FTOC(fp) ((fp)->ff_cp)
 
-#define VTOF(vp)                                                               \
-  ((vp) == VTOC((vp))->c_rsrc_vp ? VTOC((vp))->c_rsrcfork                      \
-                                 : VTOC((vp))->c_datafork)
+#define VTOF(vp) ((vp) == VTOC((vp))->c_rsrc_vp ? VTOC((vp))->c_rsrcfork : VTOC((vp))->c_datafork)
 
-#define FTOV(fp)                                                               \
-  ((fp) == FTOC(fp)->c_rsrcfork ? FTOC(fp)->c_rsrc_vp : FTOC(fp)->c_vp)
+#define FTOV(fp) ((fp) == FTOC(fp)->c_rsrcfork ? FTOC(fp)->c_rsrc_vp : FTOC(fp)->c_vp)
 
 /*
  * Test for a resource fork
@@ -196,67 +183,56 @@ struct cnode
 
 #define ATIME_ACCURACY 60
 
-#define CTIMES(cp, t1, t2)                                                     \
-  {                                                                            \
-    if ((cp)->c_flag & C_TIMEMASK) {                                           \
-      /*                                                                       \
-       * If only the access time is changing then defer                        \
-       * updating it on-disk util later (in hfs_inactive).                     \
-       * If it was recently updated then skip the update.                      \
-       */                                                                      \
-      if (((cp)->c_flag & (C_TIMEMASK | C_MODIFIED)) == C_ACCESS) {            \
-        if (((cp)->c_flag & C_ATIMEMOD) ||                                     \
-            (t1)->tv_sec > ((cp)->c_atime + ATIME_ACCURACY)) {                 \
-          (cp)->c_atime = (t1)->tv_sec;                                        \
-          (cp)->c_flag |= C_ATIMEMOD;                                          \
-        }                                                                      \
-        (cp)->c_flag &= ~C_ACCESS;                                             \
-      } else {                                                                 \
-        if ((cp)->c_flag & C_ACCESS) {                                         \
-          (cp)->c_atime = (t1)->tv_sec;                                        \
-        }                                                                      \
-        if ((cp)->c_flag & C_UPDATE) {                                         \
-          (cp)->c_mtime = (t2)->tv_sec;                                        \
-          (cp)->c_mtime_nsec = (t2)->tv_usec * 1000;                           \
-        }                                                                      \
-        if ((cp)->c_flag & C_CHANGE) {                                         \
-          (cp)->c_ctime = gettime();                                           \
-        }                                                                      \
-        (cp)->c_flag |= C_MODIFIED;                                            \
-        (cp)->c_flag &= ~C_TIMEMASK;                                           \
-      }                                                                        \
-    }                                                                          \
-  }
+#define CTIMES(cp, t1, t2)                                                                                                                                     \
+	{                                                                                                                                                      \
+		if ((cp)->c_flag & C_TIMEMASK) {                                                                                                               \
+			/*                                                                                                                                     \
+			 * If only the access time is changing then defer                                                                                      \
+			 * updating it on-disk util later (in hfs_inactive).                                                                                   \
+			 * If it was recently updated then skip the update.                                                                                    \
+			 */                                                                                                                                    \
+			if (((cp)->c_flag & (C_TIMEMASK | C_MODIFIED)) == C_ACCESS) {                                                                          \
+				if (((cp)->c_flag & C_ATIMEMOD) || (t1)->tv_sec > ((cp)->c_atime + ATIME_ACCURACY)) {                                          \
+					(cp)->c_atime = (t1)->tv_sec;                                                                                          \
+					(cp)->c_flag |= C_ATIMEMOD;                                                                                            \
+				}                                                                                                                              \
+				(cp)->c_flag &= ~C_ACCESS;                                                                                                     \
+			} else {                                                                                                                               \
+				if ((cp)->c_flag & C_ACCESS) {                                                                                                 \
+					(cp)->c_atime = (t1)->tv_sec;                                                                                          \
+				}                                                                                                                              \
+				if ((cp)->c_flag & C_UPDATE) {                                                                                                 \
+					(cp)->c_mtime = (t2)->tv_sec;                                                                                          \
+					(cp)->c_mtime_nsec = (t2)->tv_usec * 1000;                                                                             \
+				}                                                                                                                              \
+				if ((cp)->c_flag & C_CHANGE) {                                                                                                 \
+					(cp)->c_ctime = gettime();                                                                                             \
+				}                                                                                                                              \
+				(cp)->c_flag |= C_MODIFIED;                                                                                                    \
+				(cp)->c_flag &= ~C_TIMEMASK;                                                                                                   \
+			}                                                                                                                                      \
+		}                                                                                                                                              \
+	}
 
 /* This overlays the fid structure (see mount.h). */
-struct hfsfid
-{
-  u_int16_t hfsfid_len; /* Length of structure. */
-  u_int16_t hfsfid_pad; /* Force 32-bit alignment. */
-  /* The following data is filesystem-dependent, up to MAXFIDSZ (16) bytes: */
-  u_int32_t hfsfid_cnid; /* Catalog node ID. */
-  u_int32_t hfsfid_gen;  /* Generation number (create date). */
+struct hfsfid {
+	u_int16_t hfsfid_len; /* Length of structure. */
+	u_int16_t hfsfid_pad; /* Force 32-bit alignment. */
+	/* The following data is filesystem-dependent, up to MAXFIDSZ (16) bytes: */
+	u_int32_t hfsfid_cnid; /* Catalog node ID. */
+	u_int32_t hfsfid_gen;  /* Generation number (create date). */
 };
 
 /*
  * HFS cnode hash functions.
  */
-extern void
-hfs_chashinit(void);
-extern void
-hfs_chashdestroy(void);
-extern void
-hfs_chashinsert(struct cnode* cp);
-extern void
-hfs_chashremove(struct cnode* cp);
-extern struct cnode*
-hfs_chashget(struct cdev* dev,
-             ino_t inum,
-             int wantrsrc,
-             struct vnode** vpp,
-             struct vnode** rvpp);
+extern void hfs_chashinit(void);
+extern void hfs_chashdestroy(void);
+extern void hfs_chashinsert(struct cnode *cp);
+extern void hfs_chashremove(struct cnode *cp);
+extern struct cnode *hfs_chashget(struct cdev *dev, ino_t inum, int wantrsrc, struct vnode **vpp, struct vnode **rvpp);
 
-int hfs_reclaim(struct vop_reclaim_args*);
+int hfs_reclaim(struct vop_reclaim_args *);
 
 #endif /* __APPLE_API_PRIVATE */
 #endif /* _KERNEL */

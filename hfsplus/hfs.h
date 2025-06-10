@@ -92,6 +92,9 @@ int hfs_bmap(struct vop_bmap_args*);
 int hfs_strategy(struct vop_strategy_args *ap);
 int overflow_extents(struct filefork*);
 void hfs_relnamehints(struct cnode* dcp);
+int hfs_readdir(struct vop_readdir_args*);
+int hfs_access(struct vop_access_args*);
+
 #endif
 
 struct uio;  // This is more effective than #include <sys/uio.h> in case _KERNEL
@@ -221,6 +224,7 @@ typedef struct vfsVCB {
 /* This structure describes the HFS specific mount structure data. */
 typedef struct hfsmount {
   struct g_consumer *hfs_cp;      /* g_consumer */
+  struct bufobj *hfs_bo;        /* buffer object for BO_STRATEGY() */
   u_int8_t hfs_fs_ronly; /* Whether this was mounted as read-initially  */
   u_int8_t hfs_unknownpermissions; /* Whether this was mounted with
                                       MNT_UNKNOWNPERMISSIONS */
@@ -569,6 +573,8 @@ extern void hfs_setencodingbits(struct hfsmount* hfsmp, u_int32_t encoding);
 extern void replace_desc(struct cnode* cp, struct cat_desc* cdp);
 
 extern int hfs_namecmp(const char*, size_t, const char*, size_t);
+
+
 
 #endif /* __APPLE_API_PRIVATE */
 extern struct vop_vector hfs_vnodeops;

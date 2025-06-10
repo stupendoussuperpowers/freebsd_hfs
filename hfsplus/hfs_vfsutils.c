@@ -54,6 +54,8 @@
 #include "hfscommon/headers/FileMgrInternal.h"
 #include "hfscommon/headers/HFSUnicodeWrappers.h"
 
+#include <sys/kdb.h>
+
 #ifdef DARWIN
 extern int count_lock_queue __P((void));
 extern uid_t console_user;
@@ -399,6 +401,7 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->extentsRefNum), (KeyCompareProcPtr)CompareExtentKeysPlus,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
+  
   if (retval) {
     VOP_UNLOCK(vcb->extentsRefNum);
     goto ErrorExit;
@@ -428,7 +431,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
   retval = MacToVFSError(BTOpenPath(
       VTOF(vcb->catalogRefNum), (KeyCompareProcPtr)CompareExtendedCatalogKeys,
       GetBTreeBlock, ReleaseBTreeBlock, ExtendBTreeFile, SetBTreeBlockSize));
-  
   
 
   if (retval) {
@@ -502,42 +504,6 @@ OSErr hfs_MountHFSPlusVolume(struct hfsmount* hfsmp,
     MarkVCBDirty(vcb);  // mark VCB dirty so it will be written
   }
 
-#ifdef DARWIN_JOURNAL
-  //
-  // Check if we need to do late journal initialization.  This only
-  // happens if a previous version of MacOS X (or 9) touched the disk.
-  // In that case hfs_late_journal_init() will go re-locate the journal
-  // and journal_info_block files and validate that they're still kosher.
-  //
-  if ((vcb->vcbAtrb & kHFSVolumeJournaledMask) &&
-      (SWAP_BE32(vhp->lastMountedVersion) != kHFSJMountVersion) &&
-      (hfsmp->jnl == NULL)) {
-    retval = hfs_late_journal_init(hfsmp, vhp, args);
-    if (retval != 0) {
-      hfsmp->jnl = NULL;
-      goto ErrorExit;
-    } else if (hfsmp->jnl) {
-      hfsmp->hfs_mp->mnt_flag |= MNT_JOURNALED;
-    }
-  } else if (hfsmp->jnl) {
-    struct cat_attr jinfo_attr, jnl_attr;
-
-    // if we're here we need to fill in the fileid's for the
-    // journal and journal_info_block.
-    hfsmp->hfs_jnlinfoblkid =
-        GetFileInfo(vcb, kRootDirID, ".journal_info_block", &jinfo_attr, NULL);
-    hfsmp->hfs_jnlfileid =
-        GetFileInfo(vcb, kRootDirID, ".journal", &jnl_attr, NULL);
-    if (hfsmp->hfs_jnlinfoblkid == 0 || hfsmp->hfs_jnlfileid == 0) {
-      printf(
-          "hfs: danger! couldn't find the file-id's for the journal or "
-          "journal_info_block\n");
-      printf("hfs: jnlfileid %d, jnlinfoblkid %d\n", hfsmp->hfs_jnlfileid,
-             hfsmp->hfs_jnlinfoblkid);
-    }
-  }
-#endif /* DARWIN_JOURNAL */
-
   return (0);
 
 ErrorExit:
@@ -562,8 +528,6 @@ ErrorExit:
 static void ReleaseMetaFileVNode(struct vnode* vp) {
   struct filefork* fp;
 
-  printf("ReleasemetaFileVNode called\n");
-
   if (vp && (fp = VTOF(vp))) {
     if (fp->fcbBTCBPtr != NULL) {
       vn_lock(vp, LK_EXCLUSIVE | LK_RETRY); /* YYY wasn't in Darwin */
@@ -573,11 +537,7 @@ static void ReleaseMetaFileVNode(struct vnode* vp) {
 
     /* release the node even if BTClosePath fails */
     vrele(vp);
-    // free(vp->v_mount, M_HFSCNODE);
-    // vp->v_mount = NULL;
-    printf("vp->v_mount :%p | vp->v_mount == NULL :%d | vp->v_mount == 0 :%d\n", vp->v_mount, vp->v_mount == NULL, vp->v_mount == 0);
     vgone(vp);
-    printf("post vgone\n");
   }
 }
 
@@ -600,11 +560,8 @@ short hfsUnmount(register struct hfsmount* hfsmp, proc_t* p) {
   ReleaseMetaFileVNode(vcb->catalogRefNum);
   ReleaseMetaFileVNode(vcb->extentsRefNum);
 
-  // vgone(vcb);
-
   VCB_LOCK_DESTROY(vcb);
 
-  printf("returning unMount\n");
   return (retval);
 }
 

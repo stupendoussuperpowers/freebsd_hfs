@@ -361,16 +361,6 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 			goto exit;
 		}
 
-#ifdef DARWIN_JOURNAL
-		/* Hide private journal files */
-		if (hfsmp->jnl && (cp->c_parentcnid == kRootDirID) &&
-		    ((cp->c_cnid == hfsmp->hfs_jnlfileid) ||
-		     (cp->c_cnid == hfsmp->hfs_jnlinfoblkid))) {
-			retval = ENOENT;
-			goto exit;
-		}
-#endif
-
 		if (wantrsrc && rvp != NULL) {
 			vp = rvp;
 			rvp = NULL;
@@ -507,6 +497,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		*vpp = NULL;
 		return (EPERM);
 	}
+
 #define FIFO 0
 #if !FIFO
 	if (IFTOVT(attrp->ca_mode) == VFIFO) {
@@ -514,22 +505,23 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		return (EOPNOTSUPP);
 	}
 #endif
+
 	dev = hfsmp->hfs_raw_dev;
 
 	/* If no cnode was passed in then create one */
 	if (cp == NULL) {
-		cp2 = (struct cnode *)MALLOC_ZONE(sizeof(struct cnode),
-						  M_HFSNODE, M_WAITOK);
+		cp2 = (struct cnode *) malloc(sizeof(struct cnode), M_HFSNODE, M_WAITOK);
 		bzero(cp2, sizeof(struct cnode));
 		allocated = 1;
 		SET(cp2->c_flag, C_ALLOC);
 		cp2->c_cnid = descp->cd_cnid;
 		cp2->c_fileid = attrp->ca_fileid;
 		cp2->c_dev = dev;
-		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, 0);
-		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE, NULL))
-			panic(
-			    "hfs_getnewvnode: failed to lock brand new cnode");
+		
+		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, LK_NOSHARE | LK_NOWITNESS);
+		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE | LK_NOWITNESS, NULL)) {
+			panic("hfs_getnewvnode: failed to lock brand new cnode");
+		}
 		/*
 		 * There were several blocking points since we first
 		 * checked the hash. Now that we're through blocking,
@@ -561,6 +553,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	retval = getnewvnode("hfs", mp, &hfs_vnodeops, &new_vp);
 
 	if (retval) {
+		printf("not get new vnode. %d\n", retval);
 		if (allocated) {
 			hfs_chashremove(cp);
 			if (ISSET(cp->c_flag, C_WALLOC)) {
@@ -578,34 +571,36 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		*vpp = NULL;
 		return (retval);
 	}
+	
 	if (allocated) {
 		bcopy(attrp, &cp->c_attr, sizeof(struct cat_attr));
 		bcopy(descp, &cp->c_desc, sizeof(struct cat_desc));
 	}
-	new_vp->v_data = cp;
 
-	// Try this?
-	// new_vp->v_mount = mp;
-	//
+	new_vp->v_data = cp;
+	new_vp->v_vnlock = &cp->c_lock;	
+	new_vp->v_lock = *new_vp->v_vnlock;
+
 	insmntque(new_vp, mp);
 
-	new_vp->v_vnlock = &cp->c_lock;
-	if (wantrsrc && S_ISREG(cp->c_mode))
+	if (wantrsrc && S_ISREG(cp->c_mode)) {
 		cp->c_rsrc_vp = new_vp;
-	else
+	} else {
 		cp->c_vp = new_vp;
-
+	}
+	
 	/* Release reference taken on opposite vnode (if any). */
-	if (rvp)
+	if (rvp) {
 		vput(rvp);
-	if (vp)
+	}
+	
+	if (vp) {
 		vput(vp);
+	}
 
 	vp = new_vp;
-#ifdef DARWIN_UBC
-	vp->v_ubcinfo = UBC_NOINFO;
-#endif
 
+	printf("vp->v_data->c_dev [ %p ]\n", cp->c_dev);
 	/*
 	 * If this is a new cnode then initialize it using descp and attrp...
 	 */
@@ -678,43 +673,8 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	if (cp->c_cnid == kRootDirID)
 		vp->v_vflag |= VV_ROOT;
 
-#ifdef DARWIN_UBC
-	if ((vp->v_type == VREG) && !(vp->v_vflag & VV_SYSTEM) &&
-	    (UBCINFOMISSING(vp) || UBCINFORECLAIMED(vp))) {
-		ubc_info_init(vp);
-	} else {
-		vp->v_ubcinfo = UBC_NOINFO;
-	}
-#endif
-
 	if (vp->v_type == VCHR || vp->v_type == VBLK) {
-#ifdef DARWIN
-		struct vnode *nvp;
-#endif
-
 		vp->v_op = &dead_vnodeops; // hfs_specop_p;
-#ifdef DARWIN
-		if ((nvp = checkalias(vp, cp->c_rdev, mp))) {
-			/*
-			 * Discard unneeded vnode, but save its cnode.
-			 * Note that the lock is carried over in the
-			 * cnode to the replacement vnode.
-			 */
-			nvp->v_data = vp->v_data;
-			vp->v_data = NULL;
-			vp->v_op = spec_vnodeop_p;
-			vrele(vp);
-			vgone(vp);
-			/*
-			 * Reinitialize aliased cnode.
-			 * Assume its not a resource fork.
-			 */
-			cp->c_vp = nvp;
-			vp = nvp;
-		}
-#else
-		// addaliasu(vp, cp->c_rdev);
-#endif
 	} else if (vp->v_type == VFIFO) {
 #if FIFO
 		vp->v_op = hfs_fifoop_p;
@@ -729,5 +689,6 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	}
 
 	*vpp = vp;
+
 	return (0);
 }

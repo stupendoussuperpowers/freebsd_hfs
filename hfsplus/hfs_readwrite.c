@@ -1472,12 +1472,11 @@ static int hfs_strategy_fragmented(struct buf *bp) {
     */
 int hfs_strategy(struct vop_strategy_args *ap) {
 	/* {
-		struct buf *a_bp;
+		struct buf   *a_bp;
+		struct vnode *a_vp;
 	} */
-	register struct buf *bp = ap->a_bp;
-	register struct vnode *vp = bp->b_vp;
-	register struct cnode *cp = VTOC(vp);
-	// struct bufobj *bo;
+	struct buf *bp = ap->a_bp;
+	struct vnode *vp = ap->a_vp;
 	int retval = 0;
 
 	if (vp->v_type == VBLK || vp->v_type == VCHR)
@@ -1507,57 +1506,15 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 		bufdone(bp);
 		return (0);
 	}
-	vp = cp->c_devvp;
-	// bp->b_dev = vp->v_rdev;
-
-/*
-	bp->b_iooffset = dbtob(bp->b_blkno);
-	bo = VFSTOEXT2(vp->v_mount)->um_bo;
-	BO_STRATEGY(bo, bp);
-*/
 
 	bp->b_iooffset = dbtob(bp->b_blkno);
-	
-	// bo = VFSTOHFS(vp->v_mount)->um_bo;
-	// BO_STRATEGY(bo, bp);
 
-	// VOP_STRATEGY(vp, bp);
-	
-	BO_STRATEGY(&vp->v_bufobj, bp);
+	BO_STRATEGY(VFSTOHFS(vp->v_mount)->hfs_bo, bp);
 	return (0);
 }
 
-#ifdef DARWIN
-/*
-#
-#% truncate	vp	L L L
-#
-vop_truncate {
-    IN struct vnode *vp;
-    IN off_t length;
-    IN int flags;	(IO_SYNC)
-    IN struct ucred *cred;
-    IN struct proc *p;
-};
- * Truncate a cnode to at most length size, freeing (or adding) the
- * disk blocks.
- */
-int hfs_truncate(ap)
-struct vop_truncate_args /* {
-	struct vnode *a_vp;
-	off_t a_length;
-	int a_flags;
-	struct ucred *a_cred;
-	struct proc *a_p;
-} */ *ap;
-{
-	register struct vnode *vp = ap->a_vp;
-	off_t length;
-	long vflags;
-#else  /* !DARWIN */
-int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
-		 proc_t *p) {
-#endif /* DARWIN */
+
+int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, struct thread *td) {
 	register struct cnode *cp = VTOC(vp);
 	struct filefork *fp = VTOF(vp);
 	struct timeval tv;
@@ -1568,6 +1525,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
 	u_long fileblocks;
 	int blksize;
 	// struct hfsmount *hfsmp;
+	proc_t *p = curthread;
 
 	if (VTOVFS(vp)->mnt_flag & MNT_RDONLY) /* YYY wasn't there */
 		return (EROFS);
@@ -1575,9 +1533,6 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
 	if (vp->v_type != VREG && vp->v_type != VLNK)
 		return (EISDIR); /* cannot truncate an HFS directory! */
 
-#ifdef DARWIN
-	length = ap->a_length;
-#endif
 	blksize = VTOVCB(vp)->blockSize;
 	fileblocks = fp->ff_blocks;
 	filebytes = (off_t)fileblocks * (off_t)blksize;
@@ -2294,6 +2249,7 @@ struct vop_pageout_args /* {
 #endif /* DARWIN */
 
 void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
+	printf("this was called\n");
 	KASSERT(bo->bo_private != NULL, ("bo_private is null."));
 	struct vnode *devvp;
 	devvp = (struct vnode *) bo->bo_private;
@@ -2309,6 +2265,7 @@ void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
 #	IN struct buf *bp;
  */
 int hfs_bwrite(struct buf *bp) {
+	printf("did i get called?\n");
 	int retval = 0;
 	register struct vnode *vp = bp->b_vp;
 #if BYTE_ORDER == LITTLE_ENDIAN
