@@ -46,12 +46,19 @@ struct g_vfs_softc {
 	int		 sc_enxio_reported;
 };
 
+static void lock_status(struct vnode* vp, const char* func, int line) {
+	if(VOP_ISLOCKED(vp) != 0 )
+		printf("Locked. %s:%d\n", func, line);
+	else
+		printf("Not locked. %s:%d\n", func, line);
+}
+
 static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	proc_t *p = curthread;
 	int retval = E_NONE;
 	struct hfsmount *hfsmp;
 	struct buf *bp;
-	struct cdev *dev;
+	// struct cdev *dev;
 	HFSMasterDirectoryBlock *mdbp;
 	int ronly;
 	struct hfs_mount_args *args = NULL;
@@ -68,7 +75,6 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 
 	daddr_t mdb_offset;
 
-	dev = devvp->v_rdev;
 	cred = p ? p->td_proc->p_ucred : NOCRED;
 	mntwrapper = 0;
 	/*
@@ -77,15 +83,20 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	 * (except for root, which might share swap device for miniroot).
 	 * Flush out any old buffers remaining from a previous use.
 	 */
-	if (dev->si_mountpt != NULL) {
-		printf("Returning EBUSY\n");
-		return EBUSY;
-	}
+	
+	// if (dev->si_mountpt != NULL) {
+	// 	printf("Returning EBUSY\n");
+	// 	return EBUSY;
+	// }
+
+	lock_status(devvp, __func__, __LINE__);
 
 	vn_lock(devvp, LK_EXCLUSIVE | LK_RETRY);
 	retval = vinvalbuf(devvp, V_SAVE, 0, 0);
 	VOP_UNLOCK(devvp);
-	
+
+	lock_status(devvp, __func__, __LINE__);
+
 	if (retval) {
 		return retval;
 	}
@@ -93,10 +104,14 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	ronly = (mp->mnt_flag & MNT_RDONLY) != 0;
 
 	g_topology_lock();
+	lock_status(devvp, __func__, __LINE__);
 	retval = g_vfs_open(devvp, &cp, "hfs", ronly ? 0 : 1);
 	g_topology_unlock();
-	VOP_UNLOCK(devvp);
-	
+	lock_status(devvp, __func__, __LINE__);
+	// VOP_UNLOCK(devvp);
+
+	lock_status(devvp, __func__, __LINE__);
+
 	if (retval) {
 		return (retval);
 	}
@@ -115,7 +130,8 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 		goto error_exit;
 	}
 	
-	VOP_UNLOCK(devvp);
+	// VOP_UNLOCK(devvp);
+	lock_status(devvp, __func__, __LINE__);
 
 	blksize = secsize;
 	blkcnt = medsize / secsize;
@@ -132,20 +148,16 @@ static int hfs_mountfs(struct vnode *devvp, struct mount *mp) {
 	bp = NULL;
 
 	hfsmp = (struct hfsmount *)MALLOC(sizeof(struct hfsmount), M_HFSMNT, M_WAITOK);
-// #if HFS_DIAGNOSTIC
-//	printf("hfsmount: allocated struct hfsmount at %p\n", hfsmp);
-// #endif
 	bzero(hfsmp, sizeof(struct hfsmount));
-
 	mtx_init(&hfsmp->hfs_renamelock, "hfs rename lock", NULL, MTX_DEF);
 
-	hfsmp->hfs_cp = cp;
 	
 	/*
 	 *  Init the volume information structure
 	 */
 	
 	mp->mnt_data = (qaddr_t)hfsmp;
+	hfsmp->hfs_cp = cp;
 	hfsmp->hfs_mp = mp;		  /* Make VFSTOHFS work */
 	hfsmp->hfs_vcb.vcb_hfsmp = hfsmp; /* Make VCBTOHFS work */
 	hfsmp->hfs_raw_dev = devvp->v_rdev;
@@ -360,7 +372,7 @@ error_exit:
 		brelse(bp);
 	if (mdbp)
 		free(mdbp, M_TEMP);
-	(void)VOP_CLOSE(devvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
+	// (void)VOP_CLOSE(devvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
 #ifdef DARWIN_JOURNAL
 	if (hfsmp && hfsmp->jvp && hfsmp->jvp != hfsmp->hfs_devvp) {
 		(void)VOP_CLOSE(hfsmp->jvp, ronly ? FREAD : FREAD | FWRITE, cred, p);
@@ -388,7 +400,11 @@ static int hfs_mount(struct mount *mp) {
 	mode_t accessmode;
 	char *path;
 	char *from;
+	proc_t *p = curthread;
 
+
+	// Get fspath, from
+	//
 	vfs_getopt(mp->mnt_optnew, "fspath", (void **)&path, NULL);
 
 	// Enables us to use strncpy at the end when registering the mount.
@@ -398,19 +414,13 @@ static int hfs_mount(struct mount *mp) {
 	int from_size;
 	vfs_getopt(mp->mnt_optnew, "from", (void **)&from, &from_size);
 
-	proc_t *p = curthread;
 
-	struct vfsopt *tempopt;
-	TAILQ_FOREACH(tempopt, mp->mnt_optnew, link) { printf("%s => %s\n", tempopt->name, (char *)tempopt->value); }
-
-#ifndef DARWIN
 	//
 	// Use NULL path to indicate we are mounting the root filesystem.
 	//
 	if (path == NULL) {
 		return 0;
 	}
-#endif
 
 	// If updating, check whether changing from read-only to
 	// read/write; if there is no device name, that's all we do.
@@ -430,12 +440,19 @@ static int hfs_mount(struct mount *mp) {
 	devvp = ndp->ni_vp;
 	NDFREE_PNBUF(ndp);
 
+	if (VOP_ISLOCKED(devvp) != 0) {
+		printf("ndinit / ndfree is locked\n");
+	} else {
+		printf("ndinit / ndfree is not locked\n");
+	}
+
 	if (!vn_isdisk_error(devvp, &retval)) {
 		vrele(devvp);
 		return (retval);
 	}
-	// If mount by non-root, then verify that user has
-	// necessary
+	
+	//
+	// If mount by non-root, then verify that user has necessary
 	// permissions on the device.
 	//
 
@@ -452,6 +469,7 @@ static int hfs_mount(struct mount *mp) {
 	}
 
 	if ((mp->mnt_flag & MNT_UPDATE) == 0) {
+		if (VOP_ISLOCKED(devvp) != 0) { printf("pre mountfs: locked\n"); } else { printf("pre mountfs: not locked\n"); }
 		retval = hfs_mountfs(devvp, mp);
 		if (retval != E_NONE) {
 			vrele(devvp);
@@ -463,7 +481,9 @@ static int hfs_mount(struct mount *mp) {
 	if (retval != E_NONE) {
 		return (retval);
 	}
-	
+
+	if (VOP_ISLOCKED(devvp) != 0) { printf("post mountfs: locked\n"); } else { printf("post mountfs: unlocked\n"); }
+
 	vfs_mountedfrom(mp, from);
 	return (0);
 }
@@ -521,6 +541,12 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	int force;
 	proc_t *p = curthread;
 
+	if (VOP_ISLOCKED(hfsmp->hfs_devvp) != 0) {
+		printf("devvp is still locked. %s:%d\n", __func__, __LINE__);
+	} else {
+		printf("devvp is unlocked. %s:%d\n", __func__, __LINE__);
+	}
+
 #ifdef DARWIN_JOURNAL
 	int started_tr = 0, grabbed_lock = 0;
 #endif
@@ -570,9 +596,20 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 				goto err_exit;
 		}
 
+		printf("devvp usecount: %d\n", hfsmp->hfs_devvp->v_usecount);
 		vn_lock(hfsmp->hfs_devvp, LK_EXCLUSIVE | LK_RETRY);
 		retval = VOP_FSYNC(hfsmp->hfs_devvp, MNT_WAIT, p);
-		VOP_UNLOCK(hfsmp->hfs_devvp);
+
+		if (VOP_ISLOCKED(hfsmp->hfs_devvp) != 0) {
+			printf("devvp is still locked. %s:%d\n", __func__, __LINE__);
+		} else {
+			printf("devvp is unlocked. %s:%d\n", __func__, __LINE__);
+		}
+
+		printf("devvp usecount: %d\n", hfsmp->hfs_devvp->v_usecount);
+		VOP_UNLOCK(hfsmp->hfs_devvp);	
+		printf("devvp usecount: %d\n", hfsmp->hfs_devvp->v_usecount);
+
 		if (retval && !force)
 			goto err_exit;
 
@@ -634,11 +671,32 @@ static int hfs_unmount(struct mount *mp, int mntflags) {
 	g_vfs_close(hfsmp->hfs_cp);
 	g_topology_unlock();
 
+	printf("devvp usecount: %d\n", hfsmp->hfs_devvp->v_usecount);
 	hfsmp->hfs_cp = NULL;
 	vrele(hfsmp->hfs_devvp);
+	printf("devvp usecount: %d\n", hfsmp->hfs_devvp->v_usecount);
+
 	mtx_destroy(&hfsmp->hfs_renamelock);
 	free(hfsmp, M_HFSMNT);
+
 	mp->mnt_data = (qaddr_t)0;
+
+	if (VOP_ISLOCKED(hfsmp->hfs_devvp) != 0) {
+	    printf("devvp is still locked. %s:%d\n", __func__, __LINE__);
+	} else {
+	    printf("devvp is unlocked. %s:%d\n", __func__, __LINE__);
+	}
+
+	// VOP_UNLOCK(hfsmp->hfs_devvp);
+
+	if (VOP_ISLOCKED(hfsmp->hfs_devvp) != 0) {
+	    printf("devvp is still locked. %s:%d\n", __func__, __LINE__);
+	} else {
+	    printf("devvp is unlocked. %s:%d\n", __func__, __LINE__);
+	}
+
+	printf("freed all mnt structs\n");
+
 	return (0);
 
 err_exit:
