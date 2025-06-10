@@ -92,6 +92,9 @@ int hfs_bmap(struct vop_bmap_args*);
 int hfs_strategy(struct vop_strategy_args *ap);
 int overflow_extents(struct filefork*);
 void hfs_relnamehints(struct cnode* dcp);
+int hfs_readdir(struct vop_readdir_args*);
+int hfs_access(struct vop_access_args*);
+
 #endif
 
 struct uio;  // This is more effective than #include <sys/uio.h> in case _KERNEL
@@ -221,6 +224,7 @@ typedef struct vfsVCB {
 /* This structure describes the HFS specific mount structure data. */
 typedef struct hfsmount {
   struct g_consumer *hfs_cp;      /* g_consumer */
+  struct bufobj *hfs_bo;        /* buffer object for BO_STRATEGY() */
   u_int8_t hfs_fs_ronly; /* Whether this was mounted as read-initially  */
   u_int8_t hfs_unknownpermissions; /* Whether this was mounted with
                                       MNT_UNKNOWNPERMISSIONS */
@@ -452,6 +456,7 @@ u_int32_t to_hfs_time(u_int32_t bsd_time);
 
 int hfs_flushfiles(struct mount* mp, int flags, proc_t* p);
 int hfs_flushvolumeheader(struct hfsmount* hfsmp, int waitfor, int altflush);
+int hfs_inactive(struct vop_inactive_args*);
 #define HFS_ALTFLUSH 1
 
 short hfsUnmount(struct hfsmount* hfsmp, proc_t* p);
@@ -570,7 +575,11 @@ extern void replace_desc(struct cnode* cp, struct cat_desc* cdp);
 
 extern int hfs_namecmp(const char*, size_t, const char*, size_t);
 
+int hfs_cachedlookup(struct vop_cachedlookup_args*);
+int hfs_lookup(struct vop_lookup_args*);
+
 #endif /* __APPLE_API_PRIVATE */
 extern struct vop_vector hfs_vnodeops;
+extern struct buf_ops buf_ops_hfs_btree;
 #endif /* _KERNEL */
 #endif /* __HFS__ */

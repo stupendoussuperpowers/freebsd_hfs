@@ -122,9 +122,6 @@ struct cnode *hfs_chashget(struct cdev *dev, ino_t inum, int wantrsrc, struct vn
 	 * allocated, wait for it to be finished and then try again.
 	 */
 
-	// I moved this from a loop: label to a while loop, but I think it's broken :/
-//	while(1) {
-
 loop:
 	mtx_lock(&hfs_chash_slock);
 	for (cp = CNODEHASH(dev2udev(dev), inum)->lh_first; cp; cp = cp->c_hash.le_next) {
@@ -138,7 +135,6 @@ loop:
 			mtx_unlock(&hfs_chash_slock);
 			(void)tsleep((caddr_t)cp, PINOD, "hfs_chashget-1", 0);
 			goto loop;
-			// break;
 		}
 		if (ISSET(cp->c_flag, C_TRANSIT)) {
 			/*
@@ -150,7 +146,6 @@ loop:
 			mtx_unlock(&hfs_chash_slock);
 			(void)tsleep((caddr_t)cp, PINOD, "hfs_chashget-2", 0);
 			goto loop;
-			//break;
 		}
 		if (cp->c_flag & C_NOEXISTS)
 			continue;
@@ -170,17 +165,13 @@ loop:
 		mtx_unlock(&hfs_chash_slock);
 		if (vget(vp, LK_EXCLUSIVE | LK_INTERLOCK)) {
 			goto loop;
-			//break;
 		}
 		else if (cp->c_flag & C_NOEXISTS) {
 			/*
 			 * While we were blocked the cnode got deleted.
 			 */
-			// kdb_enter("manual debug");	
-		//	kdb_enter(KDB_WHY_BREAK, "Break to debugger");
 			vput(vp);
 			goto loop;
-			//break;
 		}
 
 		if (VNODE_IS_RSRC(vp))
@@ -198,7 +189,6 @@ loop:
 			*vpp = NULL;
 			if (error) {
 				goto loop;
-			//	break;
 			}
 			*rvpp = cp->c_rsrc_vp;
 
@@ -208,7 +198,6 @@ loop:
 			*rvpp = NULL;
 			if (error) {
 				goto loop;
-			//	break;
 			}
 			*vpp = cp->c_vp;
 		}
@@ -222,9 +211,13 @@ loop:
 /*
  * Insert a cnode into the hash table.
  */
-__private_extern__ void hfs_chashinsert(struct cnode *cp) {
-	if (cp->c_fileid == 0)
-		panic("hfs_chashinsert: trying to insert file id 0");
+void hfs_chashinsert(struct cnode *cp) {
+	if (cp->c_fileid == 0) {
+	#ifdef HFS_DIAGNOSTICS
+		printf("hfs_chashinsert: trying to insert file id 0\n");
+	#endif	
+		return;
+	}
 	mtx_lock(&hfs_chash_slock);
 	LIST_INSERT_HEAD(CNODEHASH(dev2udev(cp->c_dev), cp->c_fileid), cp,
 			 c_hash);
@@ -234,7 +227,7 @@ __private_extern__ void hfs_chashinsert(struct cnode *cp) {
 /*
  * Remove a cnode from the hash table.
  */
-__private_extern__ void hfs_chashremove(struct cnode *cp) {
+void hfs_chashremove(struct cnode *cp) {
 	mtx_lock(&hfs_chash_slock);
 	LIST_REMOVE(cp, c_hash);
 	cp->c_hash.le_next = NULL;

@@ -40,7 +40,6 @@
 #ifdef DARWIN
 #include <miscfs/specfs/specdev.h>
 #endif
-// #include <fs/fifofs/fifo.h>
 
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_catalog.h>
@@ -60,11 +59,10 @@ static MALLOC_DEFINE(M_HFSFORK, "HFS fork", "HFS fork data");
 /*
  * Last reference to an cnode.  If necessary, write or delete it.
  */
-__private_extern__ int static hfs_inactive(struct vop_inactive_args *ap) {
+int hfs_inactive(struct vop_inactive_args *ap) {
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct hfsmount *hfsmp = VTOHFS(vp);
-	// proc_t* p = ap->a_td;
 	proc_t *p = curthread;
 	struct timeval tv;
 	int error = 0;
@@ -74,13 +72,6 @@ __private_extern__ int static hfs_inactive(struct vop_inactive_args *ap) {
 #ifdef DARWIN_JOURNAL
 	int started_tr = 0, grabbed_lock = 0;
 #endif
-
-	//if (prtactive && vp->v_usecount != 0)
-	//	printf("hfs_inactive: pushing active");
-	
-	if (vp->v_usecount != 0) {
-		printf("hfs_inactive: pushing active");
-	}
 
 	/*
 	 * Ignore nodes related to stale file handles.
@@ -151,8 +142,7 @@ __private_extern__ int static hfs_inactive(struct vop_inactive_args *ap) {
 		error = cat_delete(hfsmp, &cp->c_desc, &cp->c_attr);
 
 		if (error && truncated && (error != ENXIO))
-			printf(
-			    "hfs_inactive: couldn't delete a truncated file!");
+			printf("hfs_inactive: couldn't delete a truncated file!");
 
 		/* Update HFS Private Data dir */
 		if (error == 0) {
@@ -162,8 +152,8 @@ __private_extern__ int static hfs_inactive(struct vop_inactive_args *ap) {
 		}
 
 		/* Unlock catalog b-tree */
-		(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE,
-					  p);
+		(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+
 		if (error)
 			goto out;
 
@@ -201,8 +191,6 @@ out:
 		hfs_global_shared_lock_release(hfsmp);
 	}
 #endif
-
-	VOP_UNLOCK(vp);
 	/*
 	 * If we are done with the vnode, reclaim it
 	 * so that it can be reused immediately.
@@ -222,14 +210,6 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
 	struct vnode *devvp = NULL;
 	struct filefork *fp = NULL;
 	struct filefork *altfp = NULL;
-	// int i;
-
-	if (vp->v_usecount != 0) {
-		printf("hfs_reclaim(): pushing active");
-	}
-
-	// if (prtactive && vp->v_usecount != 0)
-	//	printf("hfs_reclaim(): pushing active");
 
 	devvp = cp->c_devvp; /* For later releasing */
 
@@ -265,7 +245,7 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
 			free(fp->ff_symlinkptr, M_TEMP);
 			fp->ff_symlinkptr = NULL;
 		}
-		FREE_ZONE(fp, sizeof(struct filefork), M_HFSFORK);
+		free(fp, M_HFSFORK);
 		fp = NULL;
 	}
 
@@ -278,9 +258,7 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
 		vrele(devvp);
 	}
 
-	free(vp->v_data, M_HFSNODE);
-	vp->v_data = 0;
-
+	vp->v_lock = *vp->v_vnlock;
 	vp->v_vnlock = &vp->v_lock; /* so that lock assertions won't panic */
 	/*
 	 * If there was only one active fork then we can release the cnode.
@@ -316,9 +294,10 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
 		if (ISSET(cp->c_flag, C_WALLOC) ||
 		    ISSET(cp->c_flag, C_WTRANSIT))
 			wakeup(cp);
-		lockdestroy(&cp->c_lock);
-		FREE_ZONE(cp, sizeof(struct cnode), M_HFSNODE);
+		free(cp, M_HFSNODE);
 	}
+
+	vp->v_data = 0;
 
 	return (0);
 }
@@ -360,16 +339,6 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 			retval = ENOENT;
 			goto exit;
 		}
-
-#ifdef DARWIN_JOURNAL
-		/* Hide private journal files */
-		if (hfsmp->jnl && (cp->c_parentcnid == kRootDirID) &&
-		    ((cp->c_cnid == hfsmp->hfs_jnlfileid) ||
-		     (cp->c_cnid == hfsmp->hfs_jnlinfoblkid))) {
-			retval = ENOENT;
-			goto exit;
-		}
-#endif
 
 		if (wantrsrc && rvp != NULL) {
 			vp = rvp;
@@ -507,6 +476,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		*vpp = NULL;
 		return (EPERM);
 	}
+
 #define FIFO 0
 #if !FIFO
 	if (IFTOVT(attrp->ca_mode) == VFIFO) {
@@ -514,22 +484,23 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		return (EOPNOTSUPP);
 	}
 #endif
+
 	dev = hfsmp->hfs_raw_dev;
 
 	/* If no cnode was passed in then create one */
 	if (cp == NULL) {
-		cp2 = (struct cnode *)MALLOC_ZONE(sizeof(struct cnode),
-						  M_HFSNODE, M_WAITOK);
+		cp2 = (struct cnode *) malloc(sizeof(struct cnode), M_HFSNODE, M_WAITOK);
 		bzero(cp2, sizeof(struct cnode));
 		allocated = 1;
 		SET(cp2->c_flag, C_ALLOC);
 		cp2->c_cnid = descp->cd_cnid;
 		cp2->c_fileid = attrp->ca_fileid;
 		cp2->c_dev = dev;
-		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, 0);
-		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE, NULL))
-			panic(
-			    "hfs_getnewvnode: failed to lock brand new cnode");
+		
+		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, LK_NOSHARE | LK_NOWITNESS);
+		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE | LK_NOWITNESS, NULL)) {
+			panic("hfs_getnewvnode: failed to lock brand new cnode");
+		}
 		/*
 		 * There were several blocking points since we first
 		 * checked the hash. Now that we're through blocking,
@@ -540,7 +511,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		if (cp != NULL) {
 			/* We lost the race - use the winner's cnode */
 			lockdestroy(&cp2->c_lock);
-			FREE_ZONE(cp2, sizeof(struct cnode), M_HFSNODE);
+			free(cp2, M_HFSNODE);
 			allocated = 0;
 			if (wantrsrc && rvp != NULL) {
 				*vpp = rvp;
@@ -568,7 +539,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 				wakeup(cp);
 			}
 			lockdestroy(&cp2->c_lock);
-			FREE_ZONE(cp2, sizeof(struct cnode), M_HFSNODE);
+			free(cp2, M_HFSNODE);
 			allocated = 0;
 		} else if (rvp) {
 			vput(rvp);
@@ -578,33 +549,34 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		*vpp = NULL;
 		return (retval);
 	}
+	
 	if (allocated) {
 		bcopy(attrp, &cp->c_attr, sizeof(struct cat_attr));
 		bcopy(descp, &cp->c_desc, sizeof(struct cat_desc));
 	}
-	new_vp->v_data = cp;
 
-	// Try this?
-	// new_vp->v_mount = mp;
-	//
+	new_vp->v_data = cp;
+	new_vp->v_vnlock = &cp->c_lock;	
+	new_vp->v_lock = *new_vp->v_vnlock;
+
 	insmntque(new_vp, mp);
 
-	new_vp->v_vnlock = &cp->c_lock;
-	if (wantrsrc && S_ISREG(cp->c_mode))
+	if (wantrsrc && S_ISREG(cp->c_mode)) {
 		cp->c_rsrc_vp = new_vp;
-	else
+	} else {
 		cp->c_vp = new_vp;
-
+	}
+	
 	/* Release reference taken on opposite vnode (if any). */
-	if (rvp)
+	if (rvp) {
 		vput(rvp);
-	if (vp)
+	}
+	
+	if (vp) {
 		vput(vp);
+	}
 
 	vp = new_vp;
-#ifdef DARWIN_UBC
-	vp->v_ubcinfo = UBC_NOINFO;
-#endif
 
 	/*
 	 * If this is a new cnode then initialize it using descp and attrp...
@@ -678,43 +650,8 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	if (cp->c_cnid == kRootDirID)
 		vp->v_vflag |= VV_ROOT;
 
-#ifdef DARWIN_UBC
-	if ((vp->v_type == VREG) && !(vp->v_vflag & VV_SYSTEM) &&
-	    (UBCINFOMISSING(vp) || UBCINFORECLAIMED(vp))) {
-		ubc_info_init(vp);
-	} else {
-		vp->v_ubcinfo = UBC_NOINFO;
-	}
-#endif
-
 	if (vp->v_type == VCHR || vp->v_type == VBLK) {
-#ifdef DARWIN
-		struct vnode *nvp;
-#endif
-
 		vp->v_op = &dead_vnodeops; // hfs_specop_p;
-#ifdef DARWIN
-		if ((nvp = checkalias(vp, cp->c_rdev, mp))) {
-			/*
-			 * Discard unneeded vnode, but save its cnode.
-			 * Note that the lock is carried over in the
-			 * cnode to the replacement vnode.
-			 */
-			nvp->v_data = vp->v_data;
-			vp->v_data = NULL;
-			vp->v_op = spec_vnodeop_p;
-			vrele(vp);
-			vgone(vp);
-			/*
-			 * Reinitialize aliased cnode.
-			 * Assume its not a resource fork.
-			 */
-			cp->c_vp = nvp;
-			vp = nvp;
-		}
-#else
-		// addaliasu(vp, cp->c_rdev);
-#endif
 	} else if (vp->v_type == VFIFO) {
 #if FIFO
 		vp->v_op = hfs_fifoop_p;
@@ -728,6 +665,8 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		wakeup((caddr_t)cp);
 	}
 
+	vn_set_state(vp, VSTATE_CONSTRUCTED);
 	*vpp = vp;
+
 	return (0);
 }

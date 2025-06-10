@@ -88,7 +88,7 @@ int	hfs_setuse __P((struct mount *, u_long, int, caddr_t));
 int	hfs_quotactl __P((struct mount *, int, uid_t, caddr_t, struct proc *));
 __END_DECLS
 
-#define DIAGNOSTIC 0 
+// #define DIAGNOSTIC 0 
 #if DIAGNOSTIC
 __BEGIN_DECLS
 void	hfs_chkdquot __P((struct cnode *));

@@ -18,8 +18,6 @@
 #include <sys/namei.h>
 #include <sys/unistd.h>
 
-// #include <sys/kdebug.h>
-
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_catalog.h>
 #include <hfsplus/hfs_cnode.h>
@@ -31,9 +29,238 @@
 #include "hfscommon/headers/BTreesInternal.h"
 #include "hfscommon/headers/FileMgrInternal.h"
 
+static hfsdotentry rootdots[2] = {
+	{
+		1,				/* d_fileno */
+		sizeof(struct hfsdotentry),	/* d_reclen */
+		DT_DIR,				/* d_type */
+		1,				/* d_namlen */
+		"."				/* d_name */
+	},
+	{
+		1,				/* d_fileno */
+		sizeof(struct hfsdotentry),	/* d_reclen */
+		DT_DIR,				/* d_type */
+		2,				/* d_namlen */
+		".."				/* d_name */
+	}
+};
+
 int hfs_bmap(struct vop_bmap_args*);
 int hfs_strategy(struct vop_strategy_args*);
 int hfs_reclaim(struct vop_reclaim_args*);
+int hfs_inactive(struct vop_inactive_args*);
+
+int hfs_readdir(struct vop_readdir_args *ap) {
+	/* {
+		struct vnode *vp;
+		struct uio *uio;
+		struct ucred *cred;
+		int *eofflag;
+		int *ncookies;
+		u_long **cookies;
+	} */ 
+	register struct uio *uio = ap->a_uio;
+	struct cnode *cp = VTOC(ap->a_vp);
+	struct hfsmount *hfsmp = VTOHFS(ap->a_vp);
+	proc_t *p = curthread; 
+	off_t off = uio->uio_offset;
+	int retval = 0;
+	int eofflag = 0;
+	// void *user_start = NULL;
+	// int   user_len;
+ 
+	/* We assume it's all one big buffer... */
+	if (uio->uio_iovcnt > 1 || uio->uio_resid < AVERAGE_HFSDIRENTRY_SIZE)
+		return EINVAL;
+
+	/* Create the entries for . and .. */
+	if (uio->uio_offset < sizeof(rootdots)) {
+		caddr_t dep;
+		size_t dotsize;
+		
+		rootdots[0].d_fileno = cp->c_cnid;
+		rootdots[1].d_fileno = cp->c_parentcnid;
+
+		if (uio->uio_offset == 0) {
+			dep = (caddr_t) &rootdots[0];
+			dotsize = 2* sizeof(struct hfsdotentry);
+		} else if (uio->uio_offset == sizeof(struct hfsdotentry)) {
+			dep = (caddr_t) &rootdots[1];
+			dotsize = sizeof(struct hfsdotentry);
+		} else {
+			retval = EINVAL;
+			goto Exit;
+		}
+
+		retval = uiomove(dep, dotsize, uio);
+		if (retval != 0)
+			goto Exit;
+	}
+
+	/* If there are no children then we're done */	
+	if (cp->c_entries == 0) {
+		eofflag = 1;
+		retval = 0;
+		goto Exit;
+	}
+
+	/* Lock catalog b-tree */
+	retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
+	if (retval) { 
+		goto Exit;
+	}
+
+	retval = cat_getdirentries(hfsmp, &cp->c_desc, uio, &eofflag);
+	/* Unlock catalog b-tree */
+	(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+
+	if (retval != E_NONE) {
+		goto Exit;
+	}
+	
+	/* were we already past eof ? */
+	if (uio->uio_offset == off) {
+		retval = E_NONE;
+		goto Exit;
+	}
+	
+	cp->c_flag |= C_ACCESS;
+
+	if (!retval && ap->a_ncookies != NULL) {
+		struct dirent* dpStart;
+		struct dirent* dpEnd;
+		struct dirent* dp;
+		int ncookies;
+		u_long *cookies;
+		u_long *cookiep;
+
+		/*
+		 * Only the NFS server uses cookies, and it loads the
+		 * directory block into system space, so we can just look at
+		 * it directly.
+		 */
+		if (uio->uio_segflg != UIO_SYSSPACE) {
+			panic("hfs_readdir: unexpecteduio from NFS server");
+		}
+
+		dpStart = (struct dirent *)((char *)uio->uio_iov->iov_base - (uio->uio_offset - off));
+		dpEnd = (struct dirent *) uio->uio_iov->iov_base;
+		
+		for (dp = dpStart, ncookies = 0;
+		     dp < dpEnd && dp->d_reclen != 0;
+		     dp = (struct dirent *)((caddr_t)dp + dp->d_reclen)) {
+			ncookies++;
+		}
+		
+		MALLOC5(cookies, u_long *, ncookies * sizeof(u_long), M_TEMP, M_WAITOK);
+		
+		for (dp = dpStart, cookiep = cookies;
+		     dp < dpEnd;
+		     dp = (struct dirent *)((caddr_t) dp + dp->d_reclen)) {
+			off += dp->d_reclen;
+			*cookiep++ = (u_long) off;
+		}
+		
+		*ap->a_ncookies = ncookies;
+		*ap->a_cookies = cookies;
+	}
+
+Exit:;
+	if (ap->a_eofflag)
+		*ap->a_eofflag = eofflag;
+
+    return (retval);
+}
+
+int hfs_access(struct vop_access_args *ap) {
+	/* {
+		struct vnode *a_vp;
+		int a_mode;
+		struct ucred *a_cred;
+		proc_t *a_td;
+	} */ 
+	struct vnode *vp = ap->a_vp;
+	struct cnode *cp = VTOC(vp);
+	struct ucred *cred = ap->a_cred;
+	register gid_t *gp;
+	mode_t mode = ap->a_accmode;
+	mode_t mask = 0;
+	int i;
+	// int error;
+	// proc_t *p = curthread;
+
+	/*
+	 * Disallow write attempts on read-only file systems;
+	 * unless the file is a socket, fifo, or a block or
+	 * character device resident on the file system.
+	 */
+	if (mode & VWRITE) {
+		switch (vp->v_type) {
+		case VDIR:
+		case VLNK:
+		case VREG:
+			if (VTOVFS(vp)->mnt_flag & MNT_RDONLY)
+				return (EROFS);
+			break;
+		default:
+			break;
+		}
+	}
+
+	/* If immutable bit set, nobody gets to write it. */
+	if ((mode & VWRITE) && (cp->c_xflags & IMMUTABLE))
+		return (EPERM);
+
+	/* Otherwise, user id 0 always gets access. */
+	if (ap->a_cred->cr_uid == 0)
+		return (0);
+
+	mask = 0;
+
+	/* Otherwise, check the owner. */
+	if (hfs_owner_rights(VTOHFS(vp), cp->c_uid, cred, false) == 0) {
+		if (mode & VEXEC)
+			mask |= S_IXUSR;
+		if (mode & VREAD)
+			mask |= S_IRUSR;
+		if (mode & VWRITE)
+			mask |= S_IWUSR;
+  		return ((cp->c_mode & mask) == mask ? 0 : EACCES);
+	}
+
+	/* Otherwise, check the groups. */
+	if (! (VTOVFS(vp)->mnt_flag & MNT_UNKNOWNPERMISSIONS)) {
+		for (i = 0, gp = cred->cr_groups; i < cred->cr_ngroups; i++, gp++)
+			if (cp->c_gid == *gp) {
+				if (mode & VEXEC)
+					mask |= S_IXGRP;
+				if (mode & VREAD)
+					mask |= S_IRGRP;
+				if (mode & VWRITE)
+					mask |= S_IWGRP;
+				return ((cp->c_mode & mask) == mask ? 0 : EACCES);
+			}
+	}
+
+	/* Otherwise, check everyone else. */
+	if (mode & VEXEC)
+		mask |= S_IXOTH;
+	if (mode & VREAD)
+		mask |= S_IROTH;
+	if (mode & VWRITE)
+		mask |= S_IWOTH;
+	return ((cp->c_mode & mask) == mask ? 0 : EACCES);
+}
+
+static int hfs_islocked(struct vop_islocked_args *ap){
+	/* {
+		struct vnode *a_vp;
+		proc_t *a_td;
+	} */
+	// return (lockstatus(&VTOC(ap->a_vp)->c_lock));
+	return (lockstatus(ap->a_vp->v_vnlock));
+}
 
 int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor) {
 	struct cnode *cp = VTOC(vp);
@@ -199,13 +426,11 @@ int hfs_btsync(struct vnode *vp, int sync_transaction)
 	struct timeval tv;
 	struct buf *nbp;
 	struct hfsmount *hfsmp = VTOHFS(vp);
-	// int s;
 
 	/*
 	 * Flush all dirty buffers associated with b-tree.
 	 */
 loop:
-	// s = splbio();
 	VI_LOCK(vp);
 	struct bufobj v_bufobj = vp->v_bufobj;
 
@@ -247,7 +472,6 @@ loop:
 		goto loop;
 	}
 	VI_UNLOCK(vp);
-	// splx(s);
 
 	getmicrotime(&tv);
 	if ((vp->v_vflag & VV_SYSTEM) && (VTOF(vp)->fcbBTCBPtr != NULL))
@@ -334,14 +558,12 @@ static int hfs_lock1(struct vop_lock1_args *ap) {
 		char *file;
 		int line;
 	} */
-	struct vnode *vp = ap->a_vp;
-	struct cnode *cp = VTOC(vp);
+	struct mtx *ilk;
 
-	if (cp == NULL)
-		panic("hfs_lock: cnode in vnode is null\n");
+	ilk = VI_MTX(ap->a_vp);
+	int retval = (lockmgr_lock_flags(ap->a_vp->v_vnlock, ap->a_flags,
+	    &ilk->lock_object, ap->a_file, ap->a_line));
 
-	//return 
-	int retval = (lockmgr(&cp->c_lock, ap->a_flags, &vp->v_interlock));	
 	return (retval);
 }
 
@@ -385,7 +607,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_aclcheck =		VOP_EOPNOTSUPP,
 	.vop_advlock =		VOP_EOPNOTSUPP,
 	.vop_bmap =		hfs_bmap,
-	.vop_cachedlookup =	VOP_EOPNOTSUPP,
+	.vop_cachedlookup =	hfs_cachedlookup,
 	.vop_close =		VOP_EOPNOTSUPP,
 	.vop_closeextattr =	VOP_EOPNOTSUPP,
 	.vop_create =		VOP_EOPNOTSUPP,
@@ -395,14 +617,14 @@ struct vop_vector hfs_vnodeops = {
 	.vop_getattr =		hfs_getattr,
 	.vop_getextattr =	VOP_EOPNOTSUPP,
 	.vop_getwritemount =	VOP_EOPNOTSUPP,
-	.vop_inactive =		VOP_EOPNOTSUPP,
+	.vop_inactive =		hfs_inactive,
 	.vop_need_inactive =	VOP_EOPNOTSUPP,
-	.vop_islocked =		VOP_EOPNOTSUPP,
+	.vop_islocked =		hfs_islocked,
+	.vop_lock1 =		hfs_lock1,
 	.vop_ioctl =		VOP_EOPNOTSUPP,
 	.vop_link =		VOP_EOPNOTSUPP,
 	.vop_listextattr =	VOP_EOPNOTSUPP,
-	.vop_lock1 =		hfs_lock1,
-	.vop_lookup =		VOP_EOPNOTSUPP,
+	.vop_lookup =		hfs_lookup,
 	.vop_mkdir =		VOP_EOPNOTSUPP,
 	.vop_mknod =		VOP_EOPNOTSUPP,
 	.vop_open =		VOP_EOPNOTSUPP,

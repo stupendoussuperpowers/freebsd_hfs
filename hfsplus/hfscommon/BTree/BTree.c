@@ -143,6 +143,7 @@
 		 <1>	11/15/92	gs		first checked in
 
 */
+#include <sys/types.h>
 
 #include "../headers/BTreesPrivate.h"
 
@@ -190,12 +191,14 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc, GetBlockProc
 		return paramErr;
 	}
 
-	if (filePtr->fcbBTCBPtr != nil) // already has a BTreeCB
+	if (filePtr->fcbBTCBPtr != nil) { // already has a BTreeCB	
 		return noErr;
+	}
 
 	// is file large enough to contain header node?
-	if (filePtr->fcbEOF < kMinNodeSize)
-		return fsBTInvalidFileErr; // �� or E_BadHeader?
+	if (filePtr->fcbEOF < kMinNodeSize) {	
+		return fsBTInvalidFileErr;
+	} // �� or E_BadHeader?
 
 	//////////////////////// Allocate Control Block /////////////////////////////
 	btreePtr = (BTreeControlBlock *)NewPtrSysClear(sizeof(BTreeControlBlock));
@@ -233,11 +236,9 @@ OSStatus BTOpenPath(FCB *filePtr, KeyCompareProcPtr keyCompareProc, GetBlockProc
 	}
 	++btreePtr->numGetNodes;
 	header = (BTHeaderRec *)((u_long)nodeRec.buffer + sizeof(BTNodeDescriptor));
-
 	///////////////////////////// verify header /////////////////////////////////
 	err = VerifyHeader(filePtr, header);
 	M_ExitOnError(err);
-
 	///////////////////// Initalize fields from header //////////////////////////
 
 	PanicIf((FCBTOVCB(filePtr)->vcbSigWord != 0x4244) && (header->nodeSize == 512), "earTOpenPath: wrong node size for HFS+ volume!"); // 0x4244 = 'BD'

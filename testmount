@@ -1,3 +1,5 @@
 #!/bin/sh
 
 mount -t hfs -o ro,hfs_uid=999,hfs_gid=999 /dev/md10 /hello
+
+mount | grep hfs

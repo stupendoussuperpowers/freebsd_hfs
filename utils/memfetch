@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+
+import sys
+import subprocess
+import re
+
+KERNEL = "/usr/obj/usr/src/arm64/conf/GENERIC/kernel.debug"
+KMOD = "/usr/obj/sharedcode/hfs.ko.debug"
+
+def find_func(func, source):
+	try:
+		nmproc = subprocess.Popen(["nm", "-an", source], 
+								  stdout=subprocess.PIPE, text=True)
+		greproc = subprocess.Popen(["grep", func], stdin=nmproc.stdout, 
+								   stdout=subprocess.PIPE, text=True)
+		output, error = greproc.communicate()
+	except Exception as e:
+		print(f"Failed to run nm: {e}")
+		return None
+	
+	for line in output.splitlines():
+		addr = line.strip().split()[0]
+		return int(addr, 16)
+	
+	return None
+
+def find_line(source, addr):
+	try:
+		result = subprocess.check_output(["addr2line", "-e", source, hex(addr)],
+						text=True)
+		print(result.strip())
+	except Exception as e:
+		print(f"addr2line error: {e}")
+		sys.exit(1)
+
+def main():
+	if len(sys.argv) != 2:
+		print("Invalid args")
+		sys.exit(1)
+	
+	func, offset = sys.argv[1].split("+")
+	offset = int(offset, 16)
+	
+	if not func or not offset:
+		print("Invalid args")
+		sys.exit(1)
+	
+	addr = find_func(func, KERNEL)
+	binary = KERNEL
+
+	if addr is None:
+		addr = find_func(func, KMOD)
+		binary = KMOD
+	
+	if addr is None:
+		print("Function address not found")
+		sys.exit(1)
+
+	
+	final_addr = addr + offset
+
+	print(addr, offset, binary, final_addr)
+	find_line(binary, final_addr)
+	
+if __name__ == "__main__":
+	main()

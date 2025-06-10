@@ -384,8 +384,10 @@ hfs_chkiqchg(struct cnode *cp, long change, struct ucred *cred, int type)
  * On filesystems with quotas enabled, it is an error for a file to change
  * size and not to have a dquot structure associated with it.
  */
+
 void hfs_chkdquot(register struct cnode *cp)
 {
+/*
 	struct vnode *vp = cp->c_vp ? cp->c_vp : cp->c_rsrc_vp;
 	struct hfsmount *hfsmp = VFSTOHFS(vp->v_mount);
 	register int i;
@@ -399,6 +401,7 @@ void hfs_chkdquot(register struct cnode *cp)
 			panic("missing dquot");
 		}
 	}
+*/
 }
 #endif
 

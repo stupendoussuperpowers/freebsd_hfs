@@ -997,8 +997,11 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 	 * Check for underlying vnode requests and ensure that logical
 	 * to physical mapping is requested.
 	 */
-	if (ap->a_vp != NULL)
+	
+	// This might not be required... It also required changing...
+	if (ap->a_vp == NULL)
 		ap->a_vp = cp->c_devvp;
+	
 	if (ap->a_bnp == NULL)
 		return (0);
 
@@ -1094,6 +1097,7 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 			*ap->a_runb = 0;
 #endif
 	};
+
 	return (retval);
 }
 
@@ -1472,16 +1476,18 @@ static int hfs_strategy_fragmented(struct buf *bp) {
     */
 int hfs_strategy(struct vop_strategy_args *ap) {
 	/* {
-		struct buf *a_bp;
+		struct buf   *a_bp;
+		struct vnode *a_vp;
 	} */
-	register struct buf *bp = ap->a_bp;
-	register struct vnode *vp = bp->b_vp;
-	register struct cnode *cp = VTOC(vp);
-	// struct bufobj *bo;
+
+	struct buf *bp = ap->a_bp;
+	struct vnode *vp = ap->a_vp;
 	int retval = 0;
 
-	if (vp->v_type == VBLK || vp->v_type == VCHR)
-		panic("hfs_strategy: device vnode passed!");
+	if (vp->v_type == VBLK || vp->v_type == VCHR) {
+		printf("hfs_strategy: device vnode passed!");
+		return (0);
+	}
 
 	/*
 	 * If we don't already know the filesystem relative block
@@ -1507,57 +1513,15 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 		bufdone(bp);
 		return (0);
 	}
-	vp = cp->c_devvp;
-	// bp->b_dev = vp->v_rdev;
-
-/*
-	bp->b_iooffset = dbtob(bp->b_blkno);
-	bo = VFSTOEXT2(vp->v_mount)->um_bo;
-	BO_STRATEGY(bo, bp);
-*/
 
 	bp->b_iooffset = dbtob(bp->b_blkno);
-	
-	// bo = VFSTOHFS(vp->v_mount)->um_bo;
-	// BO_STRATEGY(bo, bp);
 
-	// VOP_STRATEGY(vp, bp);
-	
-	BO_STRATEGY(&vp->v_bufobj, bp);
+	BO_STRATEGY(VFSTOHFS(vp->v_mount)->hfs_bo, bp);
 	return (0);
 }
 
-#ifdef DARWIN
-/*
-#
-#% truncate	vp	L L L
-#
-vop_truncate {
-    IN struct vnode *vp;
-    IN off_t length;
-    IN int flags;	(IO_SYNC)
-    IN struct ucred *cred;
-    IN struct proc *p;
-};
- * Truncate a cnode to at most length size, freeing (or adding) the
- * disk blocks.
- */
-int hfs_truncate(ap)
-struct vop_truncate_args /* {
-	struct vnode *a_vp;
-	off_t a_length;
-	int a_flags;
-	struct ucred *a_cred;
-	struct proc *a_p;
-} */ *ap;
-{
-	register struct vnode *vp = ap->a_vp;
-	off_t length;
-	long vflags;
-#else  /* !DARWIN */
-int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
-		 proc_t *p) {
-#endif /* DARWIN */
+
+int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, struct thread *td) {
 	register struct cnode *cp = VTOC(vp);
 	struct filefork *fp = VTOF(vp);
 	struct timeval tv;
@@ -1567,7 +1531,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
 	off_t filebytes;
 	u_long fileblocks;
 	int blksize;
-	// struct hfsmount *hfsmp;
+	proc_t *p = curthread;
 
 	if (VTOVFS(vp)->mnt_flag & MNT_RDONLY) /* YYY wasn't there */
 		return (EROFS);
@@ -1575,9 +1539,6 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
 	if (vp->v_type != VREG && vp->v_type != VLNK)
 		return (EISDIR); /* cannot truncate an HFS directory! */
 
-#ifdef DARWIN
-	length = ap->a_length;
-#endif
 	blksize = VTOVCB(vp)->blockSize;
 	fileblocks = fp->ff_blocks;
 	filebytes = (off_t)fileblocks * (off_t)blksize;
@@ -1591,7 +1552,6 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred,
 	if ((!ISHFSPLUS(VTOVCB(vp))) && (length > (off_t)MAXHFSFILESIZE))
 		return (EFBIG);
 
-	// hfsmp = VTOHFS(vp);
 
 	getmicrotime(&tv);
 	retval = E_NONE;
@@ -2298,7 +2258,7 @@ void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
 	struct vnode *devvp;
 	devvp = (struct vnode *) bo->bo_private;
 	KASSERT(devvp != NULL, ("devvp is null."));
-	// g_vfs_strategy(bo, bp);
+
 	VOP_STRATEGY(devvp, bp);
 }
 

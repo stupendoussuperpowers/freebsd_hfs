@@ -26,6 +26,11 @@
 #include <sys/systm.h>
 #include <sys/bio.h>
 #include <sys/buf.h>
+
+#include <sys/rwlock.h>
+
+#include <geom/geom_vfs.h>
+
 #include <sys/bufobj.h>
 #include <sys/kernel.h>
 #include <sys/mount.h>
@@ -42,20 +47,19 @@
 
 #define FORCESYNCBTREEWRITES 0
 
-// OSStatus GetBTreeBlock(FileReference, UInt32, GetBlockOptions,
+// OSStatus GetBTreeBlock(struct vnode*, UInt32, GetBlockOptions,
 // BlockDescriptor);
 
 static int ClearBTNodes(struct vnode *vp, long blksize, off_t offset,
 			off_t amount);
 
-static struct buf_ops buf_ops_hfs_btree = {
+struct buf_ops buf_ops_hfs_btree = {
 	.bop_name = "buf_ops_hfs_btree", 
 	.bop_write = hfs_bwrite,
 	.bop_strategy = hfs_bstrategy,
-	.bop_bdflush = bufbdflush,
 };
 
-OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize,
+OSStatus SetBTreeBlockSize(struct vnode* vp, ByteCount blockSize,
 			   ItemCount minBlockCount) {
 	BTreeControlBlockPtr bTreePtr;
 	// DBG_ASSERT(vp != NULL);
@@ -69,7 +73,7 @@ OSStatus SetBTreeBlockSize(FileReference vp, ByteCount blockSize,
 	return (E_NONE);
 }
 
-OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
+OSStatus GetBTreeBlock(struct vnode* vp, UInt32 blockNum,
 		       GetBlockOptions options, BlockDescriptor *block) {
 	OSStatus retval = E_NONE;
 	struct buf *bp = NULL;
@@ -79,10 +83,6 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 	} else {
 		retval = bread(vp, blockNum, block->blockSize, NOCRED, &bp);
 	}
-	// DBG_ASSERT(bp != NULL);
-	// DBG_ASSERT(bp->b_data != NULL);
-	// DBG_ASSERT(bp->b_bcount == block->blockSize);
-	// DBG_ASSERT(bp->b_lblkno == blockNum);
 
 	if (bp == NULL)
 		retval = -1; // XXX need better error
@@ -142,7 +142,7 @@ OSStatus GetBTreeBlock(FileReference vp, UInt32 blockNum,
 	return (retval);
 }
 
-__private_extern__ void ModifyBlockStart(FileReference vp,
+__private_extern__ void ModifyBlockStart(struct vnode* vp,
 					 BlockDescPtr blockPtr) {
 #ifdef DARWIN_JOURNAL
 	struct hfsmount *hfsmp = VTOHFS(vp);
@@ -164,7 +164,7 @@ __private_extern__ void ModifyBlockStart(FileReference vp,
 #endif /* DARWIN_JOURNAL */
 }
 
-__private_extern__ OSStatus ReleaseBTreeBlock(FileReference vp,
+__private_extern__ OSStatus ReleaseBTreeBlock(struct vnode* vp,
 					      BlockDescPtr blockPtr,
 					      ReleaseBlockOptions options) {
 #ifdef DARWIN_JOURNAL
@@ -276,7 +276,7 @@ exit:
 	return (retval);
 }
 
-__private_extern__ OSStatus ExtendBTreeFile(FileReference vp, FSSize minEOF,
+__private_extern__ OSStatus ExtendBTreeFile(struct vnode* vp, FSSize minEOF,
 					    FSSize maxEOF) {
 #pragma unused(maxEOF)
 
