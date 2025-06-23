@@ -1590,7 +1590,7 @@ lastitem:
 	    catent.d_type == DT_DIR)
 		goto lastitem;
 
-#ifdef DARWIN_JOURNAL
+//#ifdef DARWIN_JOURNAL
 	/* Hide the journal files */
 	if ((curID == kRootDirID) &&
 	    (catent.d_type == DT_REG) &&
@@ -1599,7 +1599,7 @@ lastitem:
 
 		return (1);	/* skip and continue */
 	}
-#endif
+//#endif
 
 	state->cbs_lastoffset = state->cbs_uio->uio_offset;
 
@@ -1617,7 +1617,8 @@ lastitem:
 /*
  *
  */
-int cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp, struct uio *uio, int *eofflag)
+int
+cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp, struct uio *uio, int *eofflag)
 {
 	ExtendedVCB *vcb = HFSTOVCB(hfsmp);
 	BTreeIterator * iterator;
@@ -1628,10 +1629,10 @@ int cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp, struct uio
 	u_int32_t dirID = descp->cd_cnid;
 	int result;
 
-	diroffset = uio->uio_offset;
+	diroffset = uio->uio_offset - DOTS_SIZE;
 	*eofflag = 0;
 
-	MALLOC5(iterator, BTreeIterator *, sizeof(*iterator), M_TEMP, M_WAITOK);
+	iterator = (BTreeIterator *) malloc(sizeof(*iterator), M_TEMP, M_WAITOK);
 	bzero(iterator, sizeof(*iterator));
 
 	/* get an iterator and position it */
@@ -1660,8 +1661,8 @@ int cat_getdirentries(struct hfsmount *hfsmp, struct cat_desc *descp, struct uio
 		state.cbs_hfsPlus = 0;
 
 	/* process as many entries as possible... */
-	result = BTIterateRecords(GetFileControlBlock(vcb->catalogRefNum), op,
-		 iterator, (IterateCallBackProcPtr)catrec_read, &state);
+	result = BTIterateRecords(GetFileControlBlock(vcb->catalogRefNum),op, iterator, 
+			(IterateCallBackProcPtr)catrec_read, &state);
 
 	if (state.cbs_result)
 		result = state.cbs_result;

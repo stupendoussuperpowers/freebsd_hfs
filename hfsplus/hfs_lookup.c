@@ -167,7 +167,7 @@ static int forkcomponent(struct componentname *cnp, int *rsrcfork);
 
 
 int
-hfs_lookup(struct vop_lookup_args  *ap)
+hfs_lookup(struct vop_lookup_args *ap)
 {
 	/* {
 		struct vnode *a_dvp;
@@ -175,40 +175,27 @@ hfs_lookup(struct vop_lookup_args  *ap)
 		struct componentname *a_cnp;
 	} */
 
-	struct vnode *dvp;	/* vnode for directory being searched */
-	struct cnode *dcp;	/* cnode for directory being searched */
-	struct vnode *tvp;	/* target vnode */
-	struct hfsmount *hfsmp;
-	struct componentname *cnp;	
-	struct ucred *cred;
-	proc_t *p;
+	struct vnode *dvp = ap->a_dvp;	/* vnode for directory being searched */
+	struct cnode *dcp = VTOC(dvp);	/* cnode for directory being searched */
+	struct vnode **vpp = ap->a_vpp;
+	struct vnode *tvp = NULL;	/* target vnode */
+	struct hfsmount *hfsmp = VTOHFS(dvp);
+	struct componentname *cnp = ap->a_cnp;	
+	struct ucred *cred = cnp->cn_cred;
+	proc_t *p = curthread;
 	int wantrsrc = 0;
 	int forknamelen = 0;
-	int flags;
-	int wantparent;
-	int nameiop;
+	int flags = cnp->cn_flags;
+	int wantparent = flags & (LOCKPARENT | WANTPARENT);
+	int nameiop = cnp->cn_nameiop;
 	int retval = 0;
-	int isDot;
+	int isDot = FALSE;
 	struct cat_desc desc = {0};
 	struct cat_desc cndesc;
 	struct cat_attr attr;
 	struct cat_fork fork;
-	struct vnode **vpp;
 
-	vpp = ap->a_vpp;
-	cnp = ap->a_cnp;
-	dvp = ap->a_dvp;
-	dcp = VTOC(dvp);
-	hfsmp = VTOHFS(dvp);
 	*vpp = NULL;
-	isDot = FALSE;
-	tvp = NULL;
-	nameiop = cnp->cn_nameiop;
-	cred = cnp->cn_cred;
-	// p = cnp->cn_thread;
-	p = curthread;
-	flags = cnp->cn_flags;
-	wantparent = flags & (LOCKPARENT|WANTPARENT);
 
 	/*
 	 * First check to see if it is a . or .., else look it up.
@@ -234,8 +221,10 @@ hfs_lookup(struct vop_lookup_args  *ap)
 
 		/* Lock catalog b-tree */
 		retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
-		if (retval)
-			   goto exit;
+		if (retval) {
+			goto exit;
+		}
+		
 		retval = cat_lookup(hfsmp, &cndesc, wantrsrc, &desc, &attr, &fork);
 		
 		if (retval == 0 && S_ISREG(attr.ca_mode) && attr.ca_blocks < fork.cf_blocks)
@@ -270,8 +259,6 @@ notfound:
 			}
 		
 			cnp->cn_flags |= RENAME;
-			if (!(flags & LOCKPARENT))
-				VOP_UNLOCK(dvp);
 			retval = EJUSTRETURN;
 			goto exit;
 		}
@@ -299,7 +286,6 @@ found:
 			retval = EPERM;  
 			goto exit;
 		}
-		cnp->cn_consume = forknamelen;
 		flags |= ISLASTCN;
 		cnp->cn_flags |= ISLASTCN; /* tell lookup(9) dvp will be locked */
 	} else {
@@ -360,8 +346,6 @@ found:
 		if (tvp && (VTOC(tvp)->c_flag & C_HARDLINK))
 			cnp->cn_flags |= RENAME;
   
-		if (!(flags & LOCKPARENT))
-			VOP_UNLOCK(dvp);
 		*vpp = tvp;
 		goto exit;
 	 }
@@ -390,8 +374,6 @@ found:
 				goto exit;
 		}
 		cnp->cn_flags |= RENAME;
-		if (!(flags & LOCKPARENT))
-			VOP_UNLOCK(dvp);
 		*vpp = tvp;
 		goto exit;
 	 }
@@ -410,21 +392,21 @@ found:
 	 * implementing a sophisticated deadlock detection algorithm.
 	 */
 	if (flags & ISDOTDOT) {
-		VOP_UNLOCK(dvp);	/* race to get the cnode */
+	//	VOP_UNLOCK(dvp);	/* race to get the cnode */
 		retval = hfs_getcnode(hfsmp, dcp->c_parentcnid,
 			NULL, 0, NULL, NULL, &tvp);
 		if (retval) {
-			vn_lock(dvp, LK_EXCLUSIVE | LK_RETRY);
+	//		vn_lock(dvp, LK_EXCLUSIVE | LK_RETRY);
 			goto exit;
 		}
-		if ((flags & LOCKPARENT) && (flags & ISLASTCN) && (dvp != tvp) && 
-		    (retval = vn_lock(dvp, LK_EXCLUSIVE))) {
+		if ((flags & LOCKPARENT) && (flags & ISLASTCN) && (dvp != tvp) /*&& 
+		    (retval = vn_lock(dvp, LK_EXCLUSIVE))*/) {
 			vput(tvp);
 			goto exit;
 		}
 		*vpp = tvp;
 	} else if (isDot) {
-		VREF(dvp);	/* we want ourself, ie "." */
+		vref(dvp);	/* we want ourself, ie "." */
 		*vpp = dvp;
 	} else {
 		int type = (attr.ca_mode & S_IFMT);
@@ -439,8 +421,6 @@ found:
 		if (retval)
 			goto exit;
 
-		if (!(flags & LOCKPARENT) || !(flags & ISLASTCN))
-			VOP_UNLOCK(dvp);
 		*vpp = tvp;
 	}
 
@@ -485,6 +465,7 @@ exit:
  *
  */
 
+
 int
 hfs_cachedlookup(struct vop_cachedlookup_args *ap)
 {
@@ -493,138 +474,8 @@ hfs_cachedlookup(struct vop_cachedlookup_args *ap)
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
 	} */ 
-	struct vnode *dvp;
-	struct vnode *vp;
-	struct cnode *cp;
-	struct hfsmount *hfsmp;
-	int lockparent; 
-	int error;
-	struct vnode **vpp = ap->a_vpp;
-	struct componentname *cnp = ap->a_cnp;
-	struct ucred *cred = cnp->cn_cred;
-	int flags = cnp->cn_flags;
-	//proc_t *p = cnp->cn_thread;
-	proc_t *p = curthread;
-	u_long vpid;	/* capability number of vnode */
-
-	*vpp = NULL;
-	dvp = ap->a_dvp;
-	hfsmp = VTOHFS(dvp);
-	lockparent = flags & LOCKPARENT;
-
-	/*
-	 * Check accessiblity of directory.
-	 */
-	if (dvp->v_type != VDIR)
-		return (ENOTDIR);
-	if ((flags & ISLASTCN) && (dvp->v_mount->mnt_flag & MNT_RDONLY) &&
-	    (cnp->cn_nameiop == DELETE || cnp->cn_nameiop == RENAME))
-		return (EROFS);
-	if ((error = VOP_ACCESS(dvp, VEXEC, cred, p)))
-		return (error);
-
-	/*
-	 * Lookup an entry in the cache
-	 * If the lookup succeeds, the vnode is returned in *vpp, and a status of -1 is
-	 * returned. If the lookup determines that the name does not exist
-	 * (negative cacheing), a status of ENOENT is returned. If the lookup
-	 * fails, a status of zero is returned.
-	 */
-	error = cache_lookup(dvp, vpp, cnp);
-	if (error == 0)  {		/* Unsuccessfull */
-		error = hfs_lookup((struct vop_lookup_args*)ap);
-		return (error);
-	}
-	
-	if (error == ENOENT)
-		return (error);
-	
-	/* We have a name that matched */
-	vp = *vpp;
-	vpid = vp->v_id;
-
-	/*
-	 * If this is a hard-link vnode then we need to update
-	 * the name (of the link), the parent ID, the cnid, the
-	 * text encoding and the catalog hint.  This enables
-	 * getattrlist calls to return the correct link info.
-	 */
-	cp = VTOC(vp);
-	if ((flags & ISLASTCN) && (cp->c_flag & C_HARDLINK) &&
-	     ((cp->c_parentcnid != VTOC(ap->a_dvp)->c_cnid) ||
-	      (bcmp(cnp->cn_nameptr, cp->c_desc.cd_nameptr, cp->c_desc.cd_namelen) != 0))) {
-	      
-		struct cat_desc desc;
-
-		/*
-		 * Get an updated descriptor
-		 */
-		bzero(&desc, sizeof(desc));
-		desc.cd_nameptr = cnp->cn_nameptr;
-		desc.cd_namelen = cnp->cn_namelen;
-		desc.cd_parentcnid = VTOC(ap->a_dvp)->c_cnid;
-		desc.cd_hint = VTOC(ap->a_dvp)->c_childhint;
-		/* YYY there was no hfs_metafilelocking here in Darwin code! */
-		(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
-		if (cat_lookup(VTOHFS(vp), &desc, 0, &desc, NULL, NULL) == 0)
-			replace_desc(cp, &desc);
-		(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
-	}
-
-	if (dvp == vp) {	/* lookup on "." */
-		VREF(vp);
-		error = 0;
-	} else if (flags & ISDOTDOT) {
-		/* 
-		 * Carefull on the locking policy,
-		 * remember we always lock from parent to child, so have
-		 * to release lock on child before trying to lock parent
-		 * then regain lock if needed
-		 */
-		VOP_UNLOCK(dvp);
-		error = vget(vp, LK_EXCLUSIVE);
-		if (!error && lockparent && (flags & ISLASTCN))
-			error = vn_lock(dvp, LK_EXCLUSIVE);
-	} else {
-		if ((flags & ISLASTCN) == 0 && vp->v_type == VREG) {
-			int wantrsrc = 0;
-
-			cnp->cn_consume = forkcomponent(cnp, &wantrsrc);
-			
-			/* Fork names are only for lookups */
-			if (cnp->cn_consume &&
-			    (cnp->cn_nameiop != LOOKUP && cnp->cn_nameiop != CREATE))
-				return (EPERM);
-			/* 
-			 * We only store data forks in the name cache.
-			 */				 
-			if (wantrsrc)
-				return (hfs_lookup((struct vop_lookup_args*)ap));
-		}
-		error = vget(vp, LK_EXCLUSIVE);
-		if (!lockparent || error || !(flags & ISLASTCN))
-			VOP_UNLOCK(dvp);
-	}
-	/*
-	 * Check that the capability number did not change
-	 * while we were waiting for the lock.
-	 */
-	if (!error) {
-		if (vpid == vp->v_id)
-			return (0);
-		/*
-		 * The above is the NORMAL exit, after this point is an error
-		 * condition.
-		 */
-		vput(vp);
-		if (lockparent && (dvp != vp) && (flags & ISLASTCN))
-			VOP_UNLOCK(dvp);
-	}
-
-	if ((error = vn_lock(dvp, LK_EXCLUSIVE)))
-		return (error);
-
-	return (hfs_lookup((struct vop_lookup_args*)ap));
+	printf("[enter] hfs_cachedlookup\n");	
+	return (45);
 }
 
 

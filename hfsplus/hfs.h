@@ -93,7 +93,9 @@ int hfs_strategy(struct vop_strategy_args *ap);
 int overflow_extents(struct filefork*);
 void hfs_relnamehints(struct cnode* dcp);
 int hfs_readdir(struct vop_readdir_args*);
+int hfs_read(struct vop_read_args*);
 int hfs_access(struct vop_access_args*);
+int hfs_ioctl(struct vop_ioctl_args*);
 
 #endif
 
@@ -353,6 +355,8 @@ typedef struct hfsdotentry {
 #define DIRENTRY_SIZE(namlen) \
   ((sizeof(struct dirent) - (NAME_MAX + 1)) + (((namlen) + 1 + 3) & ~3))
 
+#define DOTS_SIZE   (_GENERIC_DIRLEN(1) + _GENERIC_DIRLEN(2))
+
 enum { kCatalogFolderNode = 1, kCatalogFileNode = 2 };
 
 /*
@@ -566,7 +570,6 @@ int utf8_to_mac_roman(ByteCount srcLen,
 u_int32_t hfs_pickencoding(const u_int16_t* src, int len);
 
 enum volop { VOL_UPDATE, VOL_MKDIR, VOL_RMDIR, VOL_MKFILE, VOL_RMFILE };
-
 extern int hfs_volupdate(struct hfsmount* hfsmp, enum volop op, int inroot);
 
 extern void hfs_setencodingbits(struct hfsmount* hfsmp, u_int32_t encoding);
