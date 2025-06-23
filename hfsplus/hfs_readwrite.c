@@ -39,6 +39,7 @@
 #include <sys/fcntl.h>
 #include <sys/stat.h>
 #include <sys/bio.h>
+#include <sys/filio.h>
 #include <sys/buf.h>
 #include <sys/proc.h>
 #include <sys/signalvar.h>
@@ -103,8 +104,8 @@ extern u_int32_t GetLogicalBlockSize(struct vnode *vp);
 
      */
 
-static int hfs_read(struct vop_read_args *ap) {
-
+int 
+hfs_read(struct vop_read_args *ap) {
 	/* struct vop_read_args {
 		struct vnode *a_vp;
 		struct uio *a_uio;
@@ -113,16 +114,12 @@ static int hfs_read(struct vop_read_args *ap) {
 	} */
 	register struct uio *uio = ap->a_uio;
 	register struct vnode *vp = ap->a_vp;
-	struct cnode *cp;
-	struct filefork *fp;
+	struct cnode *cp = VTOC(vp);
+	struct filefork *fp = VTOF(vp);
 	struct buf *bp;
 	daddr_t logBlockNo;
 	u_long fragSize, moveSize, startOffset, ioxfersize;
-#ifdef DARWIN
-	int devBlockSize = 0;
-#else
 	u_long logBlockSize;
-#endif
 	off_t bytesRemaining;
 	int retval = 0;
 	off_t filesize;
@@ -136,8 +133,6 @@ static int hfs_read(struct vop_read_args *ap) {
 	if (uio->uio_offset < 0)
 		return (EINVAL); /* cant read from a negative offset */
 
-	cp = VTOC(vp);
-	fp = VTOF(vp);
 	filesize = fp->ff_size;
 	// filebytes = (off_t)fp->ff_blocks * (off_t)VTOVCB(vp)->blockSize;
 	if (uio->uio_offset > filesize) {
@@ -148,134 +143,85 @@ static int hfs_read(struct vop_read_args *ap) {
 			return (0);
 	}
 
-#ifdef DARWIN
-	VOP_DEVBLOCKSIZE(cp->c_devvp, &devBlockSize);
-#else
 	logBlockSize = GetLogicalBlockSize(vp);
-#endif
 
-	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 12)) | DBG_FUNC_START,
-		     (int)uio->uio_offset, uio->uio_resid, (int)filesize,
-		     (int)filebytes, 0);
+	for (retval = 0, bp = NULL; uio->uio_resid > 0; bp = NULL) {
+		if ((bytesRemaining = (filesize - uio->uio_offset)) <= 0)
+			break;
 
-#ifdef DARWIN_UBC
-	if (UBCISVALID(vp)) {
-		retval = cluster_read(vp, uio, filesize, devBlockSize, 0);
-	} else
-#endif
-	{
+		fragSize = logBlockSize;
+		logBlockNo = (daddr_t)(uio->uio_offset / logBlockSize);
+		startOffset = (u_long)(uio->uio_offset % fragSize);
 
-		for (retval = 0, bp = NULL; uio->uio_resid > 0; bp = NULL) {
+		ioxfersize = fragSize; /* will always divide allocation block */
 
-			if ((bytesRemaining = (filesize - uio->uio_offset)) <=
-			    0)
-				break;
+		moveSize = ioxfersize;
+		moveSize -= startOffset;
 
-			fragSize = logBlockSize;
-			logBlockNo = (daddr_t)(uio->uio_offset / logBlockSize);
-			startOffset = (u_long)(uio->uio_offset % fragSize);
+		if (bytesRemaining < moveSize)
+			moveSize = bytesRemaining;
 
-			ioxfersize =
-			    fragSize; /* will always divide allocation block */
+		if (uio->uio_resid < moveSize) {
+			moveSize = uio->uio_resid;
+		};
+		if (moveSize == 0) {
+			break;
+		};
 
-			moveSize = ioxfersize;
-			moveSize -= startOffset;
+		if ((uio->uio_offset + fragSize) >= filesize) {
+			retval = bread(vp, logBlockNo, ioxfersize,
+				       NOCRED, &bp);
+		} else {
+			retval = bread(vp, logBlockNo, ioxfersize,
+				       NOCRED, &bp);
+		};
 
-			if (bytesRemaining < moveSize)
-				moveSize = bytesRemaining;
-
-			if (uio->uio_resid < moveSize) {
-				moveSize = uio->uio_resid;
-			};
-			if (moveSize == 0) {
-				break;
-			};
-
-			if ((uio->uio_offset + fragSize) >= filesize) {
-				retval = bread(vp, logBlockNo, ioxfersize,
-					       NOCRED, &bp);
-
-#ifdef DARWIN
-			} else if (logBlockNo - 1 == vp->v_lastr &&
-				   !(vp->v_flag & VRAOFF)) {
-				daddr_t nextLogBlockNo = logBlockNo + 1;
-				int nextsize;
-
-				if (((nextLogBlockNo * PAGE_SIZE) +
-				     (daddr_t)fragSize) < filesize)
-					nextsize = fragSize;
-				else {
-					nextsize = filesize -
-						   (nextLogBlockNo * PAGE_SIZE);
-					nextsize =
-					    (nextsize + (devBlockSize - 1)) &
-					    ~(devBlockSize - 1);
-				}
-				retval = breadn(vp, logBlockNo, ioxfersize,
-						&nextLogBlockNo, &nextsize, 1,
-						NOCRED, &bp);
-#endif /* DARWIN */
-			} else {
-				retval = bread(vp, logBlockNo, ioxfersize,
-					       NOCRED, &bp);
-			};
-
-			if (retval != E_NONE) {
-				if (bp) {
-					brelse(bp);
-					bp = NULL;
-				}
-				break;
-			};
-#ifdef DARWIN
-			vp->v_lastr = logBlockNo;
-#endif
-
-			/*
-			 * We should only get non-zero b_resid when an I/O
-			 * retval has occurred, which should cause us to break
-			 * above. However, if the short read did not cause an
-			 * retval, then we want to ensure that we do not uiomove
-			 * bad or uninitialized data.
-			 */
-			ioxfersize -= bp->b_resid;
-
-			if (ioxfersize <
-			    moveSize) { /* XXX PPD This should take the offset
-					   into account, too! */
-				if (ioxfersize == 0)
-					break;
-				moveSize = ioxfersize;
+		if (retval != E_NONE) {
+			if (bp) {
+				brelse(bp);
+				bp = NULL;
 			}
-			if ((startOffset + moveSize) > bp->b_bcount)
-				panic(
-				    "hfs_read: bad startOffset or moveSize\n");
+			break;
+		};
 
-			if ((retval = uiomove((caddr_t)bp->b_data + startOffset,
-					      (int)moveSize, uio)))
+		/*
+		 * We should only get non-zero b_resid when an I/O
+		 * retval has occurred, which should cause us to break
+		 * above. However, if the short read did not cause an
+		 * retval, then we want to ensure that we do not uiomove
+		 * bad or uninitialized data.
+		 */
+		ioxfersize -= bp->b_resid;
+
+		if (ioxfersize < moveSize) { 
+			/* XXX PPD This should take the offset into account, too! */
+			if (ioxfersize == 0)
 				break;
-
-			if (S_ISREG(cp->c_mode) &&
-			    (((startOffset + moveSize) == fragSize) ||
-			     (uio->uio_offset == filesize))) {
-				bp->b_flags |= B_AGE;
-			};
-
-			brelse(bp);
-			/* Start of loop resets bp to NULL before reaching
-			 * outside this block... */
+			moveSize = ioxfersize;
 		}
+		if ((startOffset + moveSize) > bp->b_bcount)
+			panic("hfs_read: bad startOffset or moveSize\n");
 
-		if (bp != NULL) {
-			brelse(bp);
-		}
+		if ((retval = uiomove((caddr_t)bp->b_data + startOffset,
+				      (int)moveSize, uio)))
+			break;
+
+		if (S_ISREG(cp->c_mode) &&
+		    (((startOffset + moveSize) == fragSize) ||
+		     (uio->uio_offset == filesize))) {
+			bp->b_flags |= B_AGE;
+		};
+
+		brelse(bp);
+		/* Start of loop resets bp to NULL before reaching
+		 * outside this block... */
+	}
+
+	if (bp != NULL) {
+		brelse(bp);
 	}
 
 	cp->c_flag |= C_ACCESS;
-
-	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 12)) | DBG_FUNC_END,
-		     (int)uio->uio_offset, uio->uio_resid, (int)filesize,
-		     (int)filebytes, 0);
 
 	return (retval);
 }
@@ -778,7 +724,6 @@ ioerr_exit:
 	return (retval);
 }
 
-#ifdef DARWIN
 /*
 
 #% ioctl	vp	U U U
@@ -794,135 +739,23 @@ ioerr_exit:
      */
 
 /* ARGSUSED */
-int hfs_ioctl(ap)
-struct vop_ioctl_args /* {
-	struct vnode *a_vp;
-	int  a_command;
-	caddr_t  a_data;
-	int  a_fflag;
-	struct ucred *a_cred;
-	struct proc *a_p;
-} */ *ap;
+int 
+hfs_ioctl(struct vop_ioctl_args *ap)
 {
-	switch (ap->a_command) {
-		case 1: {
-			register struct cnode *cp;
-			register struct vnode *vp;
-			register struct radvisory *ra;
-			struct filefork *fp;
-			int devBlockSize = 0;
-			int error;
-
-			vp = ap->a_vp;
-
-			if (vp->v_type != VREG)
-				return EINVAL;
-
-			VOP_LEASE(vp, ap->a_p, ap->a_cred, LEASE_READ);
-			error = vn_lock(vp, LK_EXCLUSIVE | LK_RETRY, ap->a_p);
-			if (error)
-				return (error);
-
-			ra = (struct radvisory *)(ap->a_data);
-			cp = VTOC(vp);
-			fp = VTOF(vp);
-
-			if (ra->ra_offset >= fp->ff_size) {
-				VOP_UNLOCK(vp); //, 0, ap->a_p);
-				return (EFBIG);
-			}
-			VOP_DEVBLOCKSIZE(cp->c_devvp, &devBlockSize);
-
-			error = advisory_read(vp, fp->ff_size, ra->ra_offset,
-					      ra->ra_count, devBlockSize);
-			VOP_UNLOCK(vp, 0, ap->a_p);
-
-			return (error);
-		}
-
-		case 2: /* F_READBOOTBLOCKS */
-		case 3: /* F_WRITEBOOTBLOCKS */
-		{
-			struct vnode *vp = ap->a_vp;
-			struct vnode *devvp = NULL;
-			struct fbootstraptransfer *btd =
-			    (struct fbootstraptransfer *)ap->a_data;
-			int devBlockSize;
-			int error;
-			struct iovec aiov;
-			struct uio auio;
-			u_long blockNumber;
-			u_long blockOffset;
-			u_long xfersize;
-			struct buf *bp;
-
-			if ((vp->v_flag & VROOT) == 0)
-				return EINVAL;
-			if (btd->fbt_offset + btd->fbt_length > 1024)
-				return EINVAL;
-
-			devvp = VTOHFS(vp)->hfs_devvp;
-			aiov.iov_base = btd->fbt_buffer;
-			aiov.iov_len = btd->fbt_length;
-
-			auio.uio_iov = &aiov;
-			auio.uio_iovcnt = 1;
-			auio.uio_offset = btd->fbt_offset;
-			auio.uio_resid = btd->fbt_length;
-			auio.uio_segflg = UIO_USERSPACE;
-			auio.uio_rw = (ap->a_command == 3)
-					  ? UIO_WRITE
-					  : UIO_READ; /* F_WRITEBOOTSTRAP /
-							 F_READBOOTSTRAP */
-			auio.uio_procp = ap->a_p;
-
-			VOP_DEVBLOCKSIZE(devvp, &devBlockSize);
-
-			while (auio.uio_resid > 0) {
-				blockNumber = auio.uio_offset / devBlockSize;
-				error = bread(devvp, blockNumber, devBlockSize,
-					      ap->a_cred, &bp);
-				if (error) {
-					if (bp)
-						brelse(bp);
-					return error;
-				};
-
-				blockOffset = auio.uio_offset % devBlockSize;
-				xfersize = devBlockSize - blockOffset;
-				error =
-				    uiomove((caddr_t)bp->b_data + blockOffset,
-					    (int)xfersize, &auio);
-				if (error) {
-					brelse(bp);
-					return error;
-				};
-				if (auio.uio_rw == UIO_WRITE) {
-					error = VOP_BWRITE(bp);
-					if (error)
-						return error;
-				} else {
-					brelse(bp);
-				};
-			};
-		};
-			return 0;
-
-		case _IOC(IOC_OUT, 'h', 4, 0): /* Create date in local time */
-		{
-			*(time_t *)(ap->a_data) =
-			    to_bsd_time(VTOVCB(ap->a_vp)->localCreateDate);
-			return 0;
-		}
-
-		default:
-			return (ENOTTY);
-	}
-
-	/* Should never get here */
-	return 0;
+	 /* {
+		struct vnode *a_vp;
+		int  a_command;
+		caddr_t  a_data;
+		int  a_fflag;
+		struct ucred *a_cred;
+		struct proc *a_p;
+	} */ 	
+	printf("[hfs_ioctl] command: %lu\n", ap->a_command);
+	printf("FIOSEEKDATA: %lu | FIOSEEKHOLE: %lu\n", FIOSEEKDATA, FIOSEEKHOLE);
+	return 45;
 }
 
+#ifdef DARWIN
 /* ARGSUSED */
 int hfs_select(ap)
 struct vop_select_args /* {
