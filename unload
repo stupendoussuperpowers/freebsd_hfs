@@ -1,3 +1,23 @@
-#!/bin/sh
+#!/usr/bin/env python3
 
-kldunload hfs.ko
+import subprocess
+
+def unmount():
+	try:
+		result = subprocess.run(["umount", "/hello"])
+	except Exception as e:
+		print(f"umount error: {e}")
+
+try:
+	result = subprocess.run(["mount"], capture_output=True, text=True, check=True)
+	result = result.stdout
+
+	if '/hello' or 'hfs,' in result:
+		unmount()
+except Exception as e:
+	print(f"error: {e}")
+
+try:
+	result = subprocess.run(["kldunload", "hfs.ko"])
+except Exception as e:
+	print(f"error: {e}")

@@ -1,6 +1,8 @@
 For list of files that have been 'fixed' so far, check MAKEFILE SRCS= \
 
----
+
+List of changes
+----------------------
 
 The following general API changes have been accomodated:
 
@@ -10,19 +12,13 @@ MALLOC (a, b, c, d, e) -> a = (b) MALLOC(c, d, e)
 FREE -> free
 VOP_FSYNC
 
-stuct buf's b_ops changes to buf->b_bufobj->buf_ops
-
 __private_extern__ and static functions need annotations fixed.
 
 function definitions for vfs_ops functions, (e.g. hfs_mount(struct mount*) )
 
-Inconsistent use of 'const' in various hfs_encoding functions.
+Shims headers added to sys/ and vfs/
 
-hfs_attrlist.c seems to be missing several headers, sys/attr.h is not a valid header anymore. 
 Lots of pointer arithmetic not allowed by clang. (Added MOVE_PTR, MOVE_PTR_SET to accomodate for these).
-Look at the mask checks which are currently commented out.
-
-<set/get>attr'list' functions seem to not be directly supported.
 
 *quota functions need more work, they seem to be relying on interfaces that have changed completely. Currently they are ifdef guarded by 'DARWIN_QUOTA'. 
 
@@ -30,13 +26,11 @@ Inconsistent use of integer pointers likely due to the original code expecting 3
 
 Non-existent 'console_user' on FreeBSD.
 
-Using GEOM APIs. g_vfs_open(...)
+Using GEOM APIs. g_vfs_open(...), g_vfs_close(...). Replace use of IOCTL calls with struct geom_consumer.
 
-Current hang/crash is mostly because of EIO errors when reading vcb->catalogRefNum from the dmg. For 100m dmg, it crashes, for 512m dmg, it hangs.
---- 
-TODO:
+Use KERNBUILDDIR to avoid incompatible KBIs when building kernel with different flags than the kernel module.
 
-Some restructuring of code may be required (moving certain fucntions to hfs_vfsutils.c)
-Add tests
-    - xnu/tests
-    - Custom tests to comply with hfsfuse behaviour
+Use of modern APIs such as insmntqueue()
+
+Implement buf_obj_ops 
+

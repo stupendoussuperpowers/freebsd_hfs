@@ -1,3 +1,4 @@
 #!/bin/sh
 
-kldload /usr/obj/sharedcode/hfs.ko && kldstat -v | grep hfs
+
+kldload /usr/obj/$(pwd)/hfs.ko && kldstat -v | grep hfs
