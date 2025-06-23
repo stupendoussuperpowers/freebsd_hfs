@@ -55,3 +55,7 @@ This repository also has several QOL scripts for frequently used actions such as
 ### Changelog
 
 [Changes made to port to FreeBSD 14](./updatelog)
+
+### Contact
+
+ss19723 [at] nyu [dot] edu on FreeBSD mailing lists.
