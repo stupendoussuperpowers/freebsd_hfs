@@ -1,8 +1,8 @@
-# Porting HFS+ to FreeBSD.
+## Porting HFS+ to FreeBSD.
 
-## Status
+### Status
 
-### Features
+#### Features
 - [x] Mounting (RO)
 - [x] Unmounting
 - [ ] Read support for directories, files
@@ -10,17 +10,17 @@
 - [ ] Write support for directories, files
 - [ ] Write support for attributes
 - [ ] Journalling support
-### Internal
+#### Internal
 - [x] Port to modern FreeBSD VFS APIs (vop/vfs vectors, VOP_* functions)
 - [ ] Build/port tests
 - [ ] Native implementation/port of `hfscommon/` code
 - [ ] Remove dependence on macOS stubs and type aliases
-### Userland Binaries (Rust)
+#### Userland Binaries (Rust)
 - [x] mount_hfs
 - [ ] newfs_hfs
 - [ ] fsck_hfs
 
-## Structure
+### Structure
 ```
 freebsd_hfs/
 ├── MAKEFFILE               # Build rules for kernel module or tools
@@ -52,6 +52,6 @@ Core logic for HFS+ implementation is located at `hfsplus/`. The folder structur
 This repository also has several QOL scripts for frequently used actions such as building and loading the kernel module, mounting the filesystem, and using kgdb to inspect crash dumps.
 
 
-## Changelog
+### Changelog
 
 [Changes made to port to FreeBSD 14](./updatelog)
