@@ -2,13 +2,13 @@
  * Copyright (c) 1999-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -61,37 +61,36 @@
  *
  *	(c) 1998-1999   Apple Computer, Inc.	 All Rights Reserved
  *	(c) 1990, 1992 	NeXT Computer, Inc.	All Rights Reserved
- *	
+ *
  *
  *	hfs_lookup.c -- code to handle directory traversal on HFS/HFS+ volume
  */
-#define LEGACY_FORK_NAMES	0
+#define LEGACY_FORK_NAMES 0
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bio.h>
 #include <sys/buf.h>
 #include <sys/file.h>
-#include <sys/mount.h>
-#include <sys/vnode.h>
-#include <sys/namei.h>
 #include <sys/malloc.h>
+#include <sys/mount.h>
+#include <sys/namei.h>
 #include <sys/paths.h>
+#include <sys/vnode.h>
 
 #include "hfs.h"
 #include "hfs_catalog.h"
 #include "hfs_cnode.h"
 
-
 static int forkcomponent(struct componentname *cnp, int *rsrcfork);
 
-#define _PATH_DATAFORKSPEC	"/..namedfork/data"
+#define _PATH_DATAFORKSPEC "/..namedfork/data"
 
 #ifdef LEGACY_FORK_NAMES
-#define LEGACY_RSRCFORKSPEC	"/rsrc"
+#define LEGACY_RSRCFORKSPEC "/rsrc"
 #endif
 
-/*	
+/*
  * FROM FREEBSD 3.1
  * Convert a component of a pathname into a pointer to a locked cnode.
  * This is a very central and rather complicated routine.
@@ -149,7 +148,7 @@ static int forkcomponent(struct componentname *cnp, int *rsrcfork);
  *	  nor deleting, add name to cache
  */
 
-/*	
+/*
  *	Lookup *nm in directory *pvp, return it in *a_vpp.
  *	**a_vpp is held on exit.
  *	We create a cnode for the file, but we do NOT open the file here.
@@ -165,7 +164,6 @@ static int forkcomponent(struct componentname *cnp, int *rsrcfork);
  *	When should we lock parent_hp in here ??
  */
 
-
 int
 hfs_lookup(struct vop_lookup_args *ap)
 {
@@ -175,12 +173,12 @@ hfs_lookup(struct vop_lookup_args *ap)
 		struct componentname *a_cnp;
 	} */
 
-	struct vnode *dvp = ap->a_dvp;	/* vnode for directory being searched */
-	struct cnode *dcp = VTOC(dvp);	/* cnode for directory being searched */
+	struct vnode *dvp = ap->a_dvp; /* vnode for directory being searched */
+	struct cnode *dcp = VTOC(dvp); /* cnode for directory being searched */
 	struct vnode **vpp = ap->a_vpp;
-	struct vnode *tvp = NULL;	/* target vnode */
+	struct vnode *tvp = NULL; /* target vnode */
 	struct hfsmount *hfsmp = VTOHFS(dvp);
-	struct componentname *cnp = ap->a_cnp;	
+	struct componentname *cnp = ap->a_cnp;
 	struct ucred *cred = cnp->cn_cred;
 	proc_t *p = curthread;
 	int wantrsrc = 0;
@@ -190,7 +188,7 @@ hfs_lookup(struct vop_lookup_args *ap)
 	int nameiop = cnp->cn_nameiop;
 	int retval = 0;
 	int isDot = FALSE;
-	struct cat_desc desc = {0};
+	struct cat_desc desc = { 0 };
 	struct cat_desc cndesc;
 	struct cat_attr attr;
 	struct cat_fork fork;
@@ -200,11 +198,11 @@ hfs_lookup(struct vop_lookup_args *ap)
 	/*
 	 * First check to see if it is a . or .., else look it up.
 	 */
-	if (flags & ISDOTDOT) {		/* Wanting the parent */
+	if (flags & ISDOTDOT) { /* Wanting the parent */
 		goto found;	/* .. is always defined */
 	} else if ((cnp->cn_nameptr[0] == '.') && (cnp->cn_namelen == 1)) {
 		isDot = TRUE;
-		goto found;	/* We always know who we are */
+		goto found; /* We always know who we are */
 	} else {
 		/* Check fork suffix to see if we want the resource fork */
 		forknamelen = forkcomponent(cnp, &wantrsrc);
@@ -224,19 +222,19 @@ hfs_lookup(struct vop_lookup_args *ap)
 		if (retval) {
 			goto exit;
 		}
-		
+
 		retval = cat_lookup(hfsmp, &cndesc, wantrsrc, &desc, &attr, &fork);
-		
+
 		if (retval == 0 && S_ISREG(attr.ca_mode) && attr.ca_blocks < fork.cf_blocks)
 			panic("hfs_lookup: bad ca_blocks (too small)");
-	
+
 		/* Unlock catalog b-tree */
-		(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+		(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
 		if (retval == 0) {
 			dcp->c_childhint = desc.cd_hint;
 			goto found;
 		}
-notfound:
+	notfound:
 		/*
 		 * This is a non-existing entry
 		 *
@@ -245,9 +243,7 @@ notfound:
 		 * allowing file to be created.
 		 */
 		if ((nameiop == CREATE || nameiop == RENAME ||
-		    (nameiop == DELETE &&
-		    (ap->a_cnp->cn_flags & DOWHITEOUT) &&
-		    (ap->a_cnp->cn_flags & ISWHITEOUT))) &&
+			(nameiop == DELETE && (ap->a_cnp->cn_flags & DOWHITEOUT) && (ap->a_cnp->cn_flags & ISWHITEOUT))) &&
 		    (flags & ISLASTCN)) {
 			/*
 			 * Access for write is interpreted as allowing
@@ -257,12 +253,12 @@ notfound:
 			if (retval) {
 				goto exit;
 			}
-		
+
 			cnp->cn_flags |= RENAME;
 			retval = EJUSTRETURN;
 			goto exit;
 		}
-	
+
 		/*
 		 * Insert name into cache (as non-existent) if appropriate.
 		 *
@@ -283,7 +279,7 @@ found:
 	if (forknamelen && S_ISREG(attr.ca_mode)) {
 		/* fork names are only for lookups */
 		if ((nameiop != LOOKUP) && (nameiop != CREATE)) {
-			retval = EPERM;  
+			retval = EPERM;
 			goto exit;
 		}
 		flags |= ISLASTCN;
@@ -299,23 +295,21 @@ found:
 	 */
 	if (nameiop == DELETE && (flags & ISLASTCN)) {
 		/*
-		* Write access to directory required to delete files.
-		*/
+		 * Write access to directory required to delete files.
+		 */
 		if ((retval = VOP_ACCESS(dvp, VWRITE, cred, p)))
 			goto exit;
-		
-		if (isDot) {	/* Want to return ourselves */
+
+		if (isDot) { /* Want to return ourselves */
 			VREF(dvp);
 			*vpp = dvp;
 			goto exit;
 		} else if (flags & ISDOTDOT) {
-			retval = hfs_getcnode(hfsmp, dcp->c_parentcnid,
-				NULL, 0, NULL, NULL, &tvp);
+			retval = hfs_getcnode(hfsmp, dcp->c_parentcnid, NULL, 0, NULL, NULL, &tvp);
 			if (retval)
 				goto exit;
 		} else {
-			retval = hfs_getcnode(hfsmp, attr.ca_fileid,
-				&desc, wantrsrc, &attr, &fork, &tvp);
+			retval = hfs_getcnode(hfsmp, attr.ca_fileid, &desc, wantrsrc, &attr, &fork, &tvp);
 			if (retval)
 				goto exit;
 		}
@@ -326,11 +320,8 @@ found:
 		 * may not delete it (unless she's root). This
 		 * implements append-only directories.
 		 */
-		if ((dcp->c_mode & S_ISTXT) &&
-			(cred->cr_uid != 0) &&
-			(cred->cr_uid != dcp->c_uid) &&
-			(tvp->v_type != VLNK) &&
-			(hfs_owner_rights(hfsmp, VTOC(tvp)->c_uid, cred, false))) {
+		if ((dcp->c_mode & S_ISTXT) && (cred->cr_uid != 0) && (cred->cr_uid != dcp->c_uid) && (tvp->v_type != VLNK) &&
+		    (hfs_owner_rights(hfsmp, VTOC(tvp)->c_uid, cred, false))) {
 			vput(tvp);
 			retval = EPERM;
 			goto exit;
@@ -345,10 +336,10 @@ found:
 		 */
 		if (tvp && (VTOC(tvp)->c_flag & C_HARDLINK))
 			cnp->cn_flags |= RENAME;
-  
+
 		*vpp = tvp;
 		goto exit;
-	 }
+	}
 
 	/*
 	 * If renaming, return the cnode and save the current name.
@@ -363,20 +354,18 @@ found:
 			retval = EISDIR;
 			goto exit;
 		} else if (flags & ISDOTDOT) {
-			retval = hfs_getcnode(hfsmp, dcp->c_parentcnid,
-				NULL, 0, NULL, NULL, &tvp);
+			retval = hfs_getcnode(hfsmp, dcp->c_parentcnid, NULL, 0, NULL, NULL, &tvp);
 			if (retval)
 				goto exit;
 		} else {
-			retval = hfs_getcnode(hfsmp, attr.ca_fileid,
-				&desc, wantrsrc, &attr, &fork, &tvp);
+			retval = hfs_getcnode(hfsmp, attr.ca_fileid, &desc, wantrsrc, &attr, &fork, &tvp);
 			if (retval)
 				goto exit;
 		}
 		cnp->cn_flags |= RENAME;
 		*vpp = tvp;
 		goto exit;
-	 }
+	}
 
 	/*
 	 * We must get the target cnode before unlocking
@@ -392,11 +381,10 @@ found:
 	 * implementing a sophisticated deadlock detection algorithm.
 	 */
 	if (flags & ISDOTDOT) {
-	//	VOP_UNLOCK(dvp);	/* race to get the cnode */
-		retval = hfs_getcnode(hfsmp, dcp->c_parentcnid,
-			NULL, 0, NULL, NULL, &tvp);
+		//	VOP_UNLOCK(dvp);	/* race to get the cnode */
+		retval = hfs_getcnode(hfsmp, dcp->c_parentcnid, NULL, 0, NULL, NULL, &tvp);
 		if (retval) {
-	//		vn_lock(dvp, LK_EXCLUSIVE | LK_RETRY);
+			//		vn_lock(dvp, LK_EXCLUSIVE | LK_RETRY);
 			goto exit;
 		}
 		if ((flags & LOCKPARENT) && (flags & ISLASTCN) && (dvp != tvp) /*&& 
@@ -406,7 +394,7 @@ found:
 		}
 		*vpp = tvp;
 	} else if (isDot) {
-		vref(dvp);	/* we want ourself, ie "." */
+		vref(dvp); /* we want ourself, ie "." */
 		*vpp = dvp;
 	} else {
 		int type = (attr.ca_mode & S_IFMT);
@@ -416,8 +404,7 @@ found:
 			goto exit;
 		}
 
-		retval = hfs_getcnode(hfsmp, attr.ca_fileid,
-			&desc, wantrsrc, &attr, &fork, &tvp);
+		retval = hfs_getcnode(hfsmp, attr.ca_fileid, &desc, wantrsrc, &attr, &fork, &tvp);
 		if (retval)
 			goto exit;
 
@@ -430,11 +417,7 @@ found:
 	 *  - Resource fork names are not cached.
 	 *  - Names with composed chars are not cached.
 	 */
-	if ((cnp->cn_flags & MAKEENTRY)
-	    && !isDot
-	    && !(flags & ISDOTDOT)
-	    && !wantrsrc
-	    && (cnp->cn_namelen == VTOC(*vpp)->c_desc.cd_namelen)) {
+	if ((cnp->cn_flags & MAKEENTRY) && !isDot && !(flags & ISDOTDOT) && !wantrsrc && (cnp->cn_namelen == VTOC(*vpp)->c_desc.cd_namelen)) {
 		cache_enter(dvp, *vpp, cnp);
 	}
 
@@ -442,8 +425,6 @@ exit:
 	cat_releasedesc(&desc);
 	return (retval);
 }
-
-
 
 /*
  * Based on vn_cache_lookup (which is vfs_cache_lookup in FreeBSD 3.1)
@@ -465,7 +446,6 @@ exit:
  *
  */
 
-
 int
 hfs_cachedlookup(struct vop_cachedlookup_args *ap)
 {
@@ -473,11 +453,10 @@ hfs_cachedlookup(struct vop_cachedlookup_args *ap)
 		struct vnode *a_dvp;
 		struct vnode **a_vpp;
 		struct componentname *a_cnp;
-	} */ 
-	printf("[enter] hfs_cachedlookup\n");	
+	} */
+	printf("[enter] hfs_cachedlookup\n");
 	return (45);
 }
-
 
 /*
  * forkcomponent - look for a fork suffix in the component name
@@ -504,7 +483,6 @@ forkcomponent(struct componentname *cnp, int *rsrcfork)
 	} else if (bcmp(suffix, _PATH_DATAFORKSPEC, sizeof(_PATH_DATAFORKSPEC)) == 0) {
 		consume = sizeof(_PATH_DATAFORKSPEC) - 1;
 	}
-
 #ifdef LEGACY_FORK_NAMES
 	else if (bcmp(suffix, LEGACY_RSRCFORKSPEC, sizeof(LEGACY_RSRCFORKSPEC)) == 0) {
 		consume = sizeof(LEGACY_RSRCFORKSPEC) - 1;
@@ -513,4 +491,3 @@ forkcomponent(struct componentname *cnp, int *rsrcfork)
 #endif
 	return (consume);
 }
-

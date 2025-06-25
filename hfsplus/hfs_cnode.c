@@ -21,14 +21,12 @@
  */
 
 #include <sys/types.h>
-
 #include <sys/param.h>
-
+#include <sys/systm.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/proc.h>
-#include <sys/systm.h>
 #include <sys/vnode.h>
 #ifdef DARWIN_UBC
 #include <sys/ubc.h>
@@ -44,7 +42,6 @@
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_catalog.h>
 #include <hfsplus/hfs_cnode.h>
-
 #include <hfsplus/hfs_quota.h>
 
 // #ifdef DARWIN
@@ -59,7 +56,9 @@ static MALLOC_DEFINE(M_HFSFORK, "HFS fork", "HFS fork data");
 /*
  * Last reference to an cnode.  If necessary, write or delete it.
  */
-int hfs_inactive(struct vop_inactive_args *ap) {
+int
+hfs_inactive(struct vop_inactive_args *ap)
+{
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct hfsmount *hfsmp = VTOHFS(vp);
@@ -88,9 +87,8 @@ int hfs_inactive(struct vop_inactive_args *ap) {
 		++forkcount;
 
 	/* If needed, get rid of any fork's data for a deleted file */
-	if ((cp->c_flag & C_DELETED) && vp->v_type == VREG &&
-	    (VTOF(vp)->ff_blocks != 0)) {
-		error = VOP_TRUNCATE(vp, (off_t)0, IO_NDELAY, NOCRED, p);
+	if ((cp->c_flag & C_DELETED) && vp->v_type == VREG && (VTOF(vp)->ff_blocks != 0)) {
+		error = hfs_truncate(vp, (off_t)0, IO_NDELAY, NOCRED, p);
 		truncated = 1;
 		// have to do this to prevent the lost ubc_info panic
 		SET(cp->c_flag, C_TRANSIT);
@@ -126,8 +124,7 @@ int hfs_inactive(struct vop_inactive_args *ap) {
 #endif
 
 		/* Lock catalog b-tree */
-		error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID,
-					    LK_EXCLUSIVE, p);
+		error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_EXCLUSIVE, p);
 		if (error)
 			goto out;
 
@@ -147,8 +144,7 @@ int hfs_inactive(struct vop_inactive_args *ap) {
 		/* Update HFS Private Data dir */
 		if (error == 0) {
 			hfsmp->hfs_privdir_attr.ca_entries--;
-			(void)cat_update(hfsmp, &hfsmp->hfs_privdir_desc,
-					 &hfsmp->hfs_privdir_attr, NULL, NULL);
+			(void)cat_update(hfsmp, &hfsmp->hfs_privdir_desc, &hfsmp->hfs_privdir_attr, NULL, NULL);
 		}
 
 		/* Unlock catalog b-tree */
@@ -178,7 +174,7 @@ int hfs_inactive(struct vop_inactive_args *ap) {
 
 	if (cp->c_flag & (C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE)) {
 		getmicrotime(&tv);
-		VOP_UPDATE(vp, &tv, &tv, 0);
+		hfs_update(vp, &tv, &tv, 0);
 	}
 out:
 #ifdef DARWIN_JOURNAL
@@ -204,7 +200,9 @@ out:
 /*
  * Reclaim a cnode so that it can be used for other purposes.
  */
-int hfs_reclaim(struct vop_reclaim_args *ap) {
+int
+hfs_reclaim(struct vop_reclaim_args *ap)
+{
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct vnode *devvp = NULL;
@@ -291,8 +289,7 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
 			free(nameptr, M_TEMP);
 		}
 		CLR(cp->c_flag, (C_ALLOC | C_TRANSIT));
-		if (ISSET(cp->c_flag, C_WALLOC) ||
-		    ISSET(cp->c_flag, C_WTRANSIT))
+		if (ISSET(cp->c_flag, C_WALLOC) || ISSET(cp->c_flag, C_WTRANSIT))
 			wakeup(cp);
 		free(cp, M_HFSNODE);
 	}
@@ -309,16 +306,15 @@ int hfs_reclaim(struct vop_reclaim_args *ap) {
  *
  * returns a locked vnode for cnode for given cnid/fileid
  */
-int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
-		 int wantrsrc, struct cat_attr *attrp, struct cat_fork *forkp,
-		 struct vnode **vpp) {
-
+int
+hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp, int wantrsrc, struct cat_attr *attrp, struct cat_fork *forkp, struct vnode **vpp)
+{
 	struct cdev *dev = hfsmp->hfs_raw_dev;
 	struct vnode *vp = NULL;
 	struct vnode *rvp = NULL;
 	struct vnode *new_vp = NULL;
 	struct cnode *cp = NULL;
-	proc_t *p = current_proc();
+	proc_t *p = curthread;
 	int retval = E_NONE;
 
 	/* Check if unmount in progress */
@@ -333,9 +329,7 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 	cp = hfs_chashget(dev, cnid, wantrsrc, &vp, &rvp);
 	if (cp != NULL) {
 		/* hide open files that have been deleted */
-		if ((hfsmp->hfs_private_metadata_dir != 0) &&
-		    (cp->c_parentcnid == hfsmp->hfs_private_metadata_dir) &&
-		    (cp->c_nlink == 0)) {
+		if ((hfsmp->hfs_private_metadata_dir != 0) && (cp->c_parentcnid == hfsmp->hfs_private_metadata_dir) && (cp->c_nlink == 0)) {
 			retval = ENOENT;
 			goto exit;
 		}
@@ -363,12 +357,11 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 		/*
 		 * hfs_lookup case, use descp, attrp and forkp
 		 */
-		retval = hfs_getnewvnode(hfsmp, cp, descp, wantrsrc, attrp,
-					 forkp, &new_vp);
+		retval = hfs_getnewvnode(hfsmp, cp, descp, wantrsrc, attrp, forkp, &new_vp);
 	} else {
-		struct cat_desc cndesc = {0};
-		struct cat_attr cnattr = {0};
-		struct cat_fork cnfork = {0};
+		struct cat_desc cndesc = { 0 };
+		struct cat_attr cnattr = { 0 };
+		struct cat_fork cnfork = { 0 };
 
 		/*
 		 * hfs_vget case, need to lookup entry (by file id)
@@ -384,41 +377,32 @@ int hfs_getcnode(struct hfsmount *hfsmp, cnid_t cnid, struct cat_desc *descp,
 
 			cnattr.ca_fileid = kRootParID;
 			cnattr.ca_nlink = 2;
-			cnattr.ca_mode =
-			    (S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO);
+			cnattr.ca_mode = (S_IFDIR | S_IRWXU | S_IRWXG | S_IRWXO);
 		} else {
 			/* Lock catalog b-tree */
-			retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID,
-						     LK_SHARED, p);
+			retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
 			if (retval)
 				goto exit;
 
-			retval = cat_idlookup(hfsmp, cnid, &cndesc, &cnattr,
-					      &cnfork);
+			retval = cat_idlookup(hfsmp, cnid, &cndesc, &cnattr, &cnfork);
 
 			/* Unlock catalog b-tree */
-			(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID,
-						  LK_RELEASE, p);
+			(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
 			if (retval)
 				goto exit;
 
 			/* Hide open files that have been deleted */
-			if ((hfsmp->hfs_private_metadata_dir != 0) &&
-			    (cndesc.cd_parentcnid ==
-			     hfsmp->hfs_private_metadata_dir)) {
+			if ((hfsmp->hfs_private_metadata_dir != 0) && (cndesc.cd_parentcnid == hfsmp->hfs_private_metadata_dir)) {
 				cat_releasedesc(&cndesc);
 				retval = ENOENT;
 				goto exit;
 			}
 		}
 
-		retval = hfs_getnewvnode(hfsmp, cp, &cndesc, 0, &cnattr,
-					 &cnfork, &new_vp);
+		retval = hfs_getnewvnode(hfsmp, cp, &cndesc, 0, &cnattr, &cnfork, &new_vp);
 
 		/* Hardlinks may need an updated catalog descriptor */
-		if (retval == 0 && new_vp &&
-		    (VTOC(new_vp)->c_flag & C_HARDLINK) && cndesc.cd_nameptr &&
-		    cndesc.cd_namelen > 0) {
+		if (retval == 0 && new_vp && (VTOC(new_vp)->c_flag & C_HARDLINK) && cndesc.cd_nameptr && cndesc.cd_namelen > 0) {
 			replace_desc(VTOC(new_vp), &cndesc);
 		}
 		cat_releasedesc(&cndesc);
@@ -456,11 +440,10 @@ done:
 // extern vnodeopv_desc hfs_specop_p;
 // extern vnodeopv_desc hfs_fifoop_p;
 
-int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
-		    struct cat_desc *descp, int wantrsrc,
-		    struct cat_attr *attrp, struct cat_fork *forkp,
-		    struct vnode **vpp) {
-
+int
+hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp, struct cat_desc *descp, int wantrsrc, struct cat_attr *attrp, struct cat_fork *forkp,
+    struct vnode **vpp)
+{
 	struct mount *mp = HFSTOVFS(hfsmp);
 	struct vnode *vp = NULL;
 	struct vnode *rvp = NULL;
@@ -489,14 +472,14 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 
 	/* If no cnode was passed in then create one */
 	if (cp == NULL) {
-		cp2 = (struct cnode *) malloc(sizeof(struct cnode), M_HFSNODE, M_WAITOK);
+		cp2 = (struct cnode *)malloc(sizeof(struct cnode), M_HFSNODE, M_WAITOK);
 		bzero(cp2, sizeof(struct cnode));
 		allocated = 1;
 		SET(cp2->c_flag, C_ALLOC);
 		cp2->c_cnid = descp->cd_cnid;
 		cp2->c_fileid = attrp->ca_fileid;
 		cp2->c_dev = dev;
-		
+
 		lockinit(&cp2->c_lock, PVFS, "cnode", VLKTIMEOUT, LK_NOSHARE | LK_NOWITNESS);
 		if (lockmgr(&cp2->c_lock, LK_EXCLUSIVE | LK_NOWITNESS, NULL)) {
 			panic("hfs_getnewvnode: failed to lock brand new cnode");
@@ -549,14 +532,14 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		*vpp = NULL;
 		return (retval);
 	}
-	
+
 	if (allocated) {
 		bcopy(attrp, &cp->c_attr, sizeof(struct cat_attr));
 		bcopy(descp, &cp->c_desc, sizeof(struct cat_desc));
 	}
 
 	new_vp->v_data = cp;
-	new_vp->v_vnlock = &cp->c_lock;	
+	new_vp->v_vnlock = &cp->c_lock;
 	new_vp->v_lock = *new_vp->v_vnlock;
 
 	insmntque(new_vp, mp);
@@ -566,12 +549,12 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	} else {
 		cp->c_vp = new_vp;
 	}
-	
+
 	/* Release reference taken on opposite vnode (if any). */
 	if (rvp) {
 		vput(rvp);
 	}
-	
+
 	if (vp) {
 		vput(vp);
 	}
@@ -588,8 +571,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		descp->cd_flags &= ~CD_HASBUF;
 
 		/* Tag hardlinks */
-		if (IFTOVT(cp->c_mode) == VREG &&
-		    (descp->cd_cnid != attrp->ca_fileid)) {
+		if (IFTOVT(cp->c_mode) == VREG && (descp->cd_cnid != attrp->ca_fileid)) {
 			cp->c_flag |= C_HARDLINK;
 		}
 
@@ -610,8 +592,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 		/*
 		 * Allocate and initialize a file fork...
 		 */
-		fp = (struct filefork *)MALLOC_ZONE(sizeof(struct filefork),
-						    M_HFSFORK, M_WAITOK);
+		fp = (struct filefork *)malloc(sizeof(struct filefork), M_HFSFORK, M_WAITOK);
 		bzero(fp, sizeof(struct filefork));
 		fp->ff_cp = cp;
 		if (forkp)
@@ -643,8 +624,7 @@ int hfs_getnewvnode(struct hfsmount *hfsmp, struct cnode *cp,
 	vp->v_type = IFTOVT(cp->c_mode);
 
 	/* Tag system files */
-	if ((descp->cd_cnid < kHFSFirstUserCatalogNodeID) &&
-	    (vp->v_type == VREG))
+	if ((descp->cd_cnid < kHFSFirstUserCatalogNodeID) && (vp->v_type == VREG))
 		vp->v_vflag |= VV_SYSTEM;
 	/* Tag root directory */
 	if (cp->c_cnid == kRootDirID)

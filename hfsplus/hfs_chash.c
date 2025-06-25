@@ -56,18 +56,15 @@
  *	derived from @(#)ufs_ihash.c	8.7 (Berkeley) 5/17/95
  */
 #include <sys/types.h>
-
 #include <sys/param.h>
-
+#include <sys/systm.h>
 #include <sys/kdb.h>
-
 #include <sys/kernel.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mutex.h>
 #include <sys/proc.h>
 #include <sys/queue.h>
-#include <sys/systm.h>
 #include <sys/vnode.h>
 
 #include <hfsplus/hfs.h>
@@ -78,7 +75,7 @@ static MALLOC_DEFINE(M_HFSHASH, "HFS chash", "HFS cnode hash data");
 /*
  * Structures associated with cnode caching.
  */
-LIST_HEAD(cnodehashhead, cnode) * cnodehashtbl;
+LIST_HEAD(cnodehashhead, cnode) *cnodehashtbl;
 u_long cnodehash; /* size of hash table - 1 */
 #define CNODEHASH(device, inum) (&cnodehashtbl[((device) + (inum)) & cnodehash])
 struct mtx hfs_chash_slock;
@@ -86,7 +83,9 @@ struct mtx hfs_chash_slock;
 /*
  * Initialize cnode hash table.
  */
-__private_extern__ void hfs_chashinit(void) {
+void
+hfs_chashinit(void)
+{
 	cnodehashtbl = hashinit(desiredvnodes, M_HFSHASH, &cnodehash);
 	mtx_init(&hfs_chash_slock, "hfs chash", NULL, MTX_DEF);
 }
@@ -94,7 +93,9 @@ __private_extern__ void hfs_chashinit(void) {
 /*
  * Deinitialize cnode hash table.  Called on unloading the HFS module.
  */
-__private_extern__ void hfs_chashdestroy(void) {
+void
+hfs_chashdestroy(void)
+{
 	mtx_destroy(&hfs_chash_slock);
 	hashdestroy(cnodehashtbl, M_HFSHASH, cnodehash);
 }
@@ -108,8 +109,10 @@ __private_extern__ void hfs_chashdestroy(void) {
  * take a reference on the other vnode (fork) so that
  * the upcoming getnewvnode can not aquire it.
  */
-struct cnode *hfs_chashget(struct cdev *dev, ino_t inum, int wantrsrc, struct vnode **vpp, struct vnode **rvpp) {
-	// proc_t* p = current_proc();
+struct cnode *
+hfs_chashget(struct cdev *dev, ino_t inum, int wantrsrc, struct vnode **vpp, struct vnode **rvpp)
+{
+	// proc_t* p = curthread;
 	struct cnode *cp;
 	struct vnode *vp;
 	int error;
@@ -165,8 +168,7 @@ loop:
 		mtx_unlock(&hfs_chash_slock);
 		if (vget(vp, LK_EXCLUSIVE | LK_INTERLOCK)) {
 			goto loop;
-		}
-		else if (cp->c_flag & C_NOEXISTS) {
+		} else if (cp->c_flag & C_NOEXISTS) {
 			/*
 			 * While we were blocked the cnode got deleted.
 			 */
@@ -211,23 +213,26 @@ loop:
 /*
  * Insert a cnode into the hash table.
  */
-void hfs_chashinsert(struct cnode *cp) {
+void
+hfs_chashinsert(struct cnode *cp)
+{
 	if (cp->c_fileid == 0) {
-	#ifdef HFS_DIAGNOSTICS
+#ifdef HFS_DIAGNOSTICS
 		printf("hfs_chashinsert: trying to insert file id 0\n");
-	#endif	
+#endif
 		return;
 	}
 	mtx_lock(&hfs_chash_slock);
-	LIST_INSERT_HEAD(CNODEHASH(dev2udev(cp->c_dev), cp->c_fileid), cp,
-			 c_hash);
+	LIST_INSERT_HEAD(CNODEHASH(dev2udev(cp->c_dev), cp->c_fileid), cp, c_hash);
 	mtx_unlock(&hfs_chash_slock);
 }
 
 /*
  * Remove a cnode from the hash table.
  */
-void hfs_chashremove(struct cnode *cp) {
+void
+hfs_chashremove(struct cnode *cp)
+{
 	mtx_lock(&hfs_chash_slock);
 	LIST_REMOVE(cp, c_hash);
 	cp->c_hash.le_next = NULL;

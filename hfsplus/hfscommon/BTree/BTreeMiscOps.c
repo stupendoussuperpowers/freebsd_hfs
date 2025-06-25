@@ -123,7 +123,9 @@ Output:		none
 Result:		UInt16		- size of combined key/record that will be inserted in btree
 -------------------------------------------------------------------------------*/
 
-UInt16 CalcKeyRecordSize(UInt16 keySize, UInt16 recSize) {
+UInt16
+CalcKeyRecordSize(UInt16 keySize, UInt16 recSize)
+{
 	if (M_IsOdd(keySize))
 		keySize += 1; // pad byte
 
@@ -147,28 +149,30 @@ Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus VerifyHeader(FCB *filePtr, BTHeaderRec *header) {
+OSStatus
+VerifyHeader(FCB *filePtr, BTHeaderRec *header)
+{
 	UInt64 forkSize;
 	UInt32 totalNodes;
 
 	switch (header->nodeSize) // node size == 512*2^n
 	{
-		case 512:
-		case 1024:
-		case 2048:
-		case 4096:
-		case 8192:
-		case 16384:
-		case 32768:
-			break;
-		default:
-			return fsBTInvalidHeaderErr; // �� E_BadNodeType
+	case 512:
+	case 1024:
+	case 2048:
+	case 4096:
+	case 8192:
+	case 16384:
+	case 32768:
+		break;
+	default:
+		return fsBTInvalidHeaderErr; // �� E_BadNodeType
 	}
 
 	totalNodes = header->totalNodes;
 
 	forkSize = (UInt64)totalNodes * (UInt64)header->nodeSize;
-	
+
 	if (forkSize != filePtr->fcbEOF)
 		return fsBTInvalidHeaderErr;
 
@@ -190,19 +194,23 @@ OSStatus VerifyHeader(FCB *filePtr, BTHeaderRec *header) {
 	/////////////////////////// Check BTree Type ////////////////////////////////
 
 	switch (header->btreeType) {
-		case 0:			 // HFS Type - no Key Descriptor
-		case kUserBTreeType:	 // with Key Descriptors etc.
-		case kReservedBTreeType: // Desktop Mgr BTree ?
-			break;
+	case 0:			 // HFS Type - no Key Descriptor
+	case kUserBTreeType:	 // with Key Descriptors etc.
+	case kReservedBTreeType: // Desktop Mgr BTree ?
+		break;
 
-		default:
-			return fsBTUnknownVersionErr;
+	default:
+		return fsBTUnknownVersionErr;
 	}
 
 	return noErr;
 }
 
-__private_extern__ OSStatus TreeIsDirty(BTreeControlBlockPtr btreePtr) { return (btreePtr->flags & kBTHeaderDirty); }
+OSStatus
+TreeIsDirty(BTreeControlBlockPtr btreePtr)
+{
+	return (btreePtr->flags & kBTHeaderDirty);
+}
 
 /*-------------------------------------------------------------------------------
 Routine:	UpdateHeader	-	Write BTreeInfoRec fields to Header node.
@@ -217,7 +225,9 @@ Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus UpdateHeader(BTreeControlBlockPtr btreePtr, Boolean forceWrite) {
+OSStatus
+UpdateHeader(BTreeControlBlockPtr btreePtr, Boolean forceWrite)
+{
 	OSStatus err;
 	BlockDescriptor node;
 	BTHeaderRec *header;
@@ -287,8 +297,10 @@ Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus FindIteratorPosition(BTreeControlBlockPtr btreePtr, BTreeIteratorPtr iterator, BlockDescriptor *left, BlockDescriptor *middle, BlockDescriptor *right,
-			      UInt32 *returnNodeNum, UInt16 *returnIndex, Boolean *foundRecord) {
+OSStatus
+FindIteratorPosition(BTreeControlBlockPtr btreePtr, BTreeIteratorPtr iterator, BlockDescriptor *left, BlockDescriptor *middle, BlockDescriptor *right,
+    UInt32 *returnNodeNum, UInt16 *returnIndex, Boolean *foundRecord)
+{
 	OSStatus err;
 	Boolean foundIt;
 	UInt32 nodeNum;
@@ -428,13 +440,13 @@ SearchTheTree: {
 	err = SearchTree(btreePtr, &iterator->key, treePathTable, &nodeNum, middle, &index);
 	switch (err) // �� separate find condition from exceptions
 	{
-		case noErr:
-			foundIt = true;
-			break;
-		case fsBTRecordNotFoundErr:
-			break;
-		default:
-			goto ErrorExit;
+	case noErr:
+		foundIt = true;
+		break;
+	case fsBTRecordNotFoundErr:
+		break;
+	default:
+		goto ErrorExit;
 	}
 }
 
@@ -465,7 +477,9 @@ ErrorExit:
 
 /////////////////////////////// CheckInsertParams ///////////////////////////////
 
-OSStatus CheckInsertParams(FCB *filePtr, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 recordLen) {
+OSStatus
+CheckInsertParams(FCB *filePtr, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 recordLen)
+{
 	BTreeControlBlockPtr btreePtr;
 
 	if (filePtr == nil)
@@ -516,8 +530,10 @@ Result:		noErr			- success
 			!= noErr		- GetNode, ReleaseNode, UpdateNode returned an error
 -------------------------------------------------------------------------------*/
 
-OSStatus TrySimpleReplace(BTreeControlBlockPtr btreePtr, NodeDescPtr nodePtr, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 recordLen,
-			  Boolean *recordInserted) {
+OSStatus
+TrySimpleReplace(BTreeControlBlockPtr btreePtr, NodeDescPtr nodePtr, BTreeIterator *iterator, FSBufferDescriptor *record, UInt16 recordLen,
+    Boolean *recordInserted)
+{
 	UInt32 oldSpace;
 	UInt32 spaceNeeded;
 	UInt16 index;
@@ -582,14 +598,15 @@ Output:		answer		- true if the hint looks reasonable
 Result:		noErr			- success
 -------------------------------------------------------------------------------*/
 
-OSStatus IsItAHint(BTreeControlBlockPtr btreePtr, BTreeIterator *iterator, Boolean *answer) {
+OSStatus
+IsItAHint(BTreeControlBlockPtr btreePtr, BTreeIterator *iterator, Boolean *answer)
+{
 	++btreePtr->numHintChecks;
 
 #if DEBUG_BUILD
 	if (iterator->hint.nodeNum >= btreePtr->totalNodes) {
 		*answer = false;
 	} else
-
 #endif
 	    if (iterator->hint.nodeNum == 0) {
 		*answer = false;

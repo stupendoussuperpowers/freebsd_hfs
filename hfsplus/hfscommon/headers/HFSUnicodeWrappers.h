@@ -2,13 +2,13 @@
  * Copyright (c) 2000-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -73,38 +73,31 @@
 #ifdef _KERNEL
 #ifdef __APPLE_API_PRIVATE
 
-#include "../../hfs_macos_defs.h"
 #include "../../hfs_format.h"
+#include "../../hfs_macos_defs.h"
 
-
-extern OSErr ConvertUnicodeToUTF8Mangled ( ByteCount srcLen,
-									ConstUniCharArrayPtr srcStr,
-									ByteCount maxDstLen,
-					 				ByteCount *actualDstLen,
-									unsigned char* dstStr ,
-									HFSCatalogNodeID cnid);
+extern OSErr ConvertUnicodeToUTF8Mangled(ByteCount srcLen, ConstUniCharArrayPtr srcStr, ByteCount maxDstLen, ByteCount *actualDstLen, unsigned char *dstStr,
+    HFSCatalogNodeID cnid);
 
 /*
 	This routine compares two Unicode names based on an ordering defined by the HFS Plus B-tree.
 	This ordering must stay fixed for all time.
-	
+
 	Output:
 		-n		name1 < name2	(i.e. name 1 sorts before name 2)
 		 0		name1 = name2
 		+n		name1 > name2
-	
+
 	NOTE: You should not depend on the magnitude of the result, just its sign.  That is, when name1 < name2, then any
 	negative number may be returned.
 */
 
-extern SInt32 FastUnicodeCompare(register ConstUniCharArrayPtr str1, register ItemCount length1,
-								 register ConstUniCharArrayPtr str2, register ItemCount length2);
+extern SInt32 FastUnicodeCompare(register ConstUniCharArrayPtr str1, register ItemCount length1, register ConstUniCharArrayPtr str2,
+    register ItemCount length2);
 
+extern SInt32 FastRelString(ConstStr255Param str1, ConstStr255Param str2);
 
-extern SInt32 FastRelString( ConstStr255Param str1, ConstStr255Param str2 );
-
-
-extern HFSCatalogNodeID GetEmbeddedFileID( ConstStr31Param filename, UInt32 length, UInt32 *prefixLength );
+extern HFSCatalogNodeID GetEmbeddedFileID(ConstStr31Param filename, UInt32 length, UInt32 *prefixLength);
 
 #endif /* __APPLE_API_PRIVATE */
 #endif /* _KERNEL */

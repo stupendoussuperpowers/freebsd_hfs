@@ -2,13 +2,13 @@
  * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -102,8 +102,6 @@
 
 #include "../headers/BTreesPrivate.h"
 
-
-
 ///////////////////////// BTree Module Node Operations //////////////////////////
 //
 //	GetNode 			- Call FS Agent to get node
@@ -133,44 +131,30 @@
 //
 /////////////////////////////////////////////////////////////////////////////////
 
-
-
 ////////////////////// Routines Internal To BTreeNodeOps.c //////////////////////
 
-UInt16		GetRecordOffset		(BTreeControlBlockPtr	 btree,
-								 NodeDescPtr			 node,
-								 UInt16					 index );
+UInt16 GetRecordOffset(BTreeControlBlockPtr btree, NodeDescPtr node, UInt16 index);
 
-UInt16	   *GetOffsetAddress	(BTreeControlBlockPtr	btreePtr,
-								 NodeDescPtr			 node,
-								 UInt16					index );
-								 
-void		InsertOffset		(BTreeControlBlockPtr	 btreePtr,
-								 NodeDescPtr			 node,
-								 UInt16					 index,
-								 UInt16					 delta );
+UInt16 *GetOffsetAddress(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index);
 
-void		DeleteOffset		(BTreeControlBlockPtr	 btreePtr,
-								 NodeDescPtr			 node,
-								 UInt16					 index );
+void InsertOffset(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index, UInt16 delta);
 
+void DeleteOffset(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index);
 
 /////////////////////////////////////////////////////////////////////////////////
 
-#define GetRecordOffset(btreePtr,node,index)		(*(short *) ((UInt8 *)(node) + (btreePtr)->nodeSize - ((index) << 1) - kOffsetSize))
+#define GetRecordOffset(btreePtr, node, index) (*(short *)((UInt8 *)(node) + (btreePtr)->nodeSize - ((index) << 1) - kOffsetSize))
 
 #if HFS_DIAGNOSTIC
-		#include <sys/systm.h>
+#include <sys/systm.h>
 #ifdef DARWIN
-	    #define PRINTIT kprintf
+#define PRINTIT kprintf
 #else
-	    #define PRINTIT printf
+#define PRINTIT printf
 #endif
 #endif /* HFS_DIAGNOSTIC */
 
 static void PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber);
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -180,87 +164,81 @@ Function:	Gets an existing BTree node from FS Agent and verifies it.
 
 Input:		btreePtr	- pointer to BTree control block
 			nodeNum		- number of node to request
-			
+
 Output:		nodePtr		- pointer to beginning of node (nil if error)
-			
+
 Result:
 			noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr ) {
+OSStatus
+GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr)
+{
 	OSStatus err;
 	GetBlockProcPtr getNodeProc;
-	
 
-	//€€ is nodeNum within proper range?
-	if( nodeNum >= btreePtr->totalNodes )
-	{
+	// €€ is nodeNum within proper range?
+	if (nodeNum >= btreePtr->totalNodes) {
 		Panic("GetNode:nodeNum >= totalNodes");
 		err = fsBTInvalidNodeErr;
 		goto ErrorExit;
 	}
-	
-	nodePtr->blockSize = btreePtr->nodeSize;	// indicate the size of a node
-	
+
+	nodePtr->blockSize = btreePtr->nodeSize; // indicate the size of a node
+
 	getNodeProc = btreePtr->getBlockProc;
 	err = getNodeProc(btreePtr->fileRefNum, nodeNum, kGetBlock, nodePtr);
-	if (err != noErr)
-	{
-		Panic ("GetNode: getNodeProc returned error.");
-	//	nodePtr->buffer = nil;
+	if (err != noErr) {
+		Panic("GetNode: getNodeProc returned error.");
+		//	nodePtr->buffer = nil;
 		goto ErrorExit;
 	}
 	++btreePtr->numGetNodes;
-	
+
 	//
 	// Optimization
 	// Only call CheckNode if the node came from disk.
 	// If it was in the cache, we'll assume its already a valid node.
 	//
 
-	if ( nodePtr->blockReadFromDisk )	// if we read it from disk then check it
+	if (nodePtr->blockReadFromDisk) // if we read it from disk then check it
 	{
-		err = CheckNode (btreePtr, nodePtr->buffer);
+		err = CheckNode(btreePtr, nodePtr->buffer);
 
-		if (err != noErr)
-		{	
-		
-		VTOVCB(btreePtr->fileRefNum)->vcbFlags |= kHFS_DamagedVolume;
+		if (err != noErr) {
+			VTOVCB(btreePtr->fileRefNum)->vcbFlags |= kHFS_DamagedVolume;
 
-		  #if HFS_DIAGNOSTIC
+#if HFS_DIAGNOSTIC
 			if (((NodeDescPtr)nodePtr->buffer)->numRecords != 0)
 				PrintNode(nodePtr->buffer, btreePtr->nodeSize, nodeNum);
-		  #endif
+#endif
 
-			if (DEBUG_BUILD)
-			{
+			if (DEBUG_BUILD) {
 				// With the removal of bounds checking in IsItAHint(), it's possible that
 				// GetNode() will be called to fetch a clear (all zeroes) node. We want
 				// CheckNode() to fail in this case (it does), however we don't want to assert
 				// this case because it is not really an "error". Returning an error from GetNode()
 				// in this case will cause the hint checking code to ignore the hint and revert to
 				// the full search mode.
-				
+
 				{
-					UInt32	*cur;
-					UInt32	*lastPlusOne;
-					
-					cur 		= nodePtr->buffer;
-					lastPlusOne = (UInt32 *) ((UInt8 *) cur + btreePtr->nodeSize);
-					
-					while( cur < lastPlusOne )
-					{
-						if( *cur++ != 0 )
-						{
-							Panic ("GetNode: CheckNode returned error.");
+					UInt32 *cur;
+					UInt32 *lastPlusOne;
+
+					cur = nodePtr->buffer;
+					lastPlusOne = (UInt32 *)((UInt8 *)cur + btreePtr->nodeSize);
+
+					while (cur < lastPlusOne) {
+						if (*cur++ != 0) {
+							Panic("GetNode: CheckNode returned error.");
 							break;
 						}
 					}
 				}
 			}
-			
-			(void) TrashNode (btreePtr, nodePtr);					// ignore error
+
+			(void)TrashNode(btreePtr, nodePtr); // ignore error
 			goto ErrorExit;
 		}
 	}
@@ -268,13 +246,11 @@ OSStatus GetNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *nodePtr
 	return noErr;
 
 ErrorExit:
-	nodePtr->buffer			= nil;
-	nodePtr->blockHeader	= nil;
+	nodePtr->buffer = nil;
+	nodePtr->blockHeader = nil;
 
-	return	err;
+	return err;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -285,56 +261,46 @@ Function:	Gets a new BTree node from FS Agent and initializes it to an empty
 
 Input:		btreePtr		- pointer to BTree control block
 			nodeNum			- number of node to request
-			
+
 Output:		returnNodePtr	- pointer to beginning of node (nil if error)
-			
+
 Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	GetNewNode	(BTreeControlBlockPtr	 btreePtr,
-						 UInt32					 nodeNum,
-						 NodeRec				*returnNodePtr )
+OSStatus
+GetNewNode(BTreeControlBlockPtr btreePtr, UInt32 nodeNum, NodeRec *returnNodePtr)
 {
-	OSStatus			 err;
-	NodeDescPtr			 node;
-	void				*pos;
-	GetBlockProcPtr		 getNodeProc;
-	
+	OSStatus err;
+	NodeDescPtr node;
+	void *pos;
+	GetBlockProcPtr getNodeProc;
 
 	//////////////////////// get buffer for new node ////////////////////////////
 
-	returnNodePtr->blockSize = btreePtr->nodeSize;	// indicate the size of a node
+	returnNodePtr->blockSize = btreePtr->nodeSize; // indicate the size of a node
 
 	getNodeProc = btreePtr->getBlockProc;
-	err = getNodeProc (btreePtr->fileRefNum,
-					   nodeNum,
-					   kGetBlock+kGetEmptyBlock,
-					   returnNodePtr );
-					   
-	if (err != noErr)
-	{
-		Panic ("GetNewNode: getNodeProc returned error.");
-	//	returnNodePtr->buffer = nil;
+	err = getNodeProc(btreePtr->fileRefNum, nodeNum, kGetBlock + kGetEmptyBlock, returnNodePtr);
+
+	if (err != noErr) {
+		Panic("GetNewNode: getNodeProc returned error.");
+		//	returnNodePtr->buffer = nil;
 		return err;
 	}
 	++btreePtr->numGetNewNodes;
-	
 
 	////////////////////////// initialize the node //////////////////////////////
 
 	node = returnNodePtr->buffer;
-	
-	ClearNode (btreePtr, node);						// clear the node
 
-	pos = (char *)node + btreePtr->nodeSize - 2;	// find address of last offset
-	*(UInt16 *)pos = sizeof (BTNodeDescriptor);		// set offset to beginning of free space
+	ClearNode(btreePtr, node); // clear the node
 
+	pos = (char *)node + btreePtr->nodeSize - 2; // find address of last offset
+	*(UInt16 *)pos = sizeof(BTNodeDescriptor);   // set offset to beginning of free space
 
 	return noErr;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -344,38 +310,31 @@ Function:	Informs the FS Agent that a BTree node may be released.
 
 Input:		btreePtr		- pointer to BTree control block
 			nodeNum			- number of node to release
-						
+
 Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	ReleaseNode	(BTreeControlBlockPtr	 btreePtr,
-						 NodePtr				 nodePtr )
+OSStatus
+ReleaseNode(BTreeControlBlockPtr btreePtr, NodePtr nodePtr)
 {
-	OSStatus			 err;
-	ReleaseBlockProcPtr	 releaseNodeProc;
-
+	OSStatus err;
+	ReleaseBlockProcPtr releaseNodeProc;
 
 	err = noErr;
-	
-	if (nodePtr->buffer != nil)
-	{
+
+	if (nodePtr->buffer != nil) {
 		releaseNodeProc = btreePtr->releaseBlockProc;
-		err = releaseNodeProc (btreePtr->fileRefNum,
-							   nodePtr,
-							   kReleaseBlock );
-		PanicIf (err, "ReleaseNode: releaseNodeProc returned error.");
+		err = releaseNodeProc(btreePtr->fileRefNum, nodePtr, kReleaseBlock);
+		PanicIf(err, "ReleaseNode: releaseNodeProc returned error.");
 		++btreePtr->numReleaseNodes;
 	}
 
-	nodePtr->buffer			= nil;
-	nodePtr->blockHeader	= nil;
+	nodePtr->buffer = nil;
+	nodePtr->blockHeader = nil;
 
 	return err;
 }
-
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -386,37 +345,31 @@ Function:	Informs the FS Agent that a BTree node may be released and thrown away
 
 Input:		btreePtr		- pointer to BTree control block
 			nodeNum			- number of node to release
-						
+
 Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	TrashNode	(BTreeControlBlockPtr	 btreePtr,
-						 NodePtr				 nodePtr )
+OSStatus
+TrashNode(BTreeControlBlockPtr btreePtr, NodePtr nodePtr)
 {
-	OSStatus			 err;
-	ReleaseBlockProcPtr	 releaseNodeProc;
-	
+	OSStatus err;
+	ReleaseBlockProcPtr releaseNodeProc;
 
 	err = noErr;
-	
-	if (nodePtr->buffer != nil)
-	{
+
+	if (nodePtr->buffer != nil) {
 		releaseNodeProc = btreePtr->releaseBlockProc;
-		err = releaseNodeProc (btreePtr->fileRefNum,
-							   nodePtr,
-							   kReleaseBlock | kTrashBlock );
-		PanicIf (err, "TrashNode: releaseNodeProc returned error.");
+		err = releaseNodeProc(btreePtr->fileRefNum, nodePtr, kReleaseBlock | kTrashBlock);
+		PanicIf(err, "TrashNode: releaseNodeProc returned error.");
 		++btreePtr->numReleaseNodes;
 	}
 
-	nodePtr->buffer			= nil;
-	nodePtr->blockHeader	= nil;
-	
+	nodePtr->buffer = nil;
+	nodePtr->blockHeader = nil;
+
 	return err;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -431,49 +384,41 @@ Input:		btreePtr		- pointer to BTree control block
 			nodeNum			- number of node to release
 			transactionID	- ID of transaction this node update is a part of
 			flags			- special flags to pass to ReleaseNodeProc
-						
+
 Result:		noErr		- success
 			!= noErr	- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	UpdateNode	(BTreeControlBlockPtr	 btreePtr,
-						 NodePtr				 nodePtr,
-						 UInt32					 transactionID,
-						 UInt32					 flags )
+OSStatus
+UpdateNode(BTreeControlBlockPtr btreePtr, NodePtr nodePtr, UInt32 transactionID, UInt32 flags)
 {
-	OSStatus			 err;
-	ReleaseBlockProcPtr	 releaseNodeProc;
-	
-	
+	OSStatus err;
+	ReleaseBlockProcPtr releaseNodeProc;
+
 	err = noErr;
-		
-	if (nodePtr->buffer != nil)			//€€ why call UpdateNode if nil ?!?
+
+	if (nodePtr->buffer != nil) // €€ why call UpdateNode if nil ?!?
 	{
-		if (DEBUG_BUILD)
-		{
-			if ( btreePtr->attributes & kBTVariableIndexKeysMask )
-				(void) CheckNode (btreePtr, nodePtr->buffer);
+		if (DEBUG_BUILD) {
+			if (btreePtr->attributes & kBTVariableIndexKeysMask)
+				(void)CheckNode(btreePtr, nodePtr->buffer);
 		}
 
 		releaseNodeProc = btreePtr->releaseBlockProc;
-		err = releaseNodeProc (btreePtr->fileRefNum,
-							   nodePtr,
-							   flags | kMarkBlockDirty );
+		err = releaseNodeProc(btreePtr->fileRefNum, nodePtr, flags | kMarkBlockDirty);
 		++btreePtr->numUpdateNodes;
-		M_ExitOnError (err);
+		M_ExitOnError(err);
 	}
-	
-	nodePtr->buffer			= nil;
-	nodePtr->blockHeader	= nil;
 
-	return	noErr;
+	nodePtr->buffer = nil;
+	nodePtr->blockHeader = nil;
+
+	return noErr;
 
 ErrorExit:
-	
-	return	err;
+
+	return err;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -487,19 +432,20 @@ Function:	Checks the validity of a node by verifying that the fLink and bLink fi
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node to check
-						
+
 Result:		noErr		- success
 			fsBTInvalidNodeErr		- failure
 -------------------------------------------------------------------------------*/
 
-OSStatus	CheckNode	(BTreeControlBlockPtr	 btreePtr, NodeDescPtr	 node )
+OSStatus
+CheckNode(BTreeControlBlockPtr btreePtr, NodeDescPtr node)
 {
-	SInt32		index;
-	SInt32		maxRecords;
-	UInt32		maxNode;
-	UInt16		nodeSize;
-	UInt16		offset;
-	UInt16		prevOffset;
+	SInt32 index;
+	SInt32 maxRecords;
+	UInt32 maxNode;
+	UInt16 nodeSize;
+	UInt16 offset;
+	UInt16 prevOffset;
 
 	nodeSize = btreePtr->nodeSize;
 
@@ -507,62 +453,61 @@ OSStatus	CheckNode	(BTreeControlBlockPtr	 btreePtr, NodeDescPtr	 node )
 
 	maxNode = (GetFileControlBlock(btreePtr->fileRefNum)->fcbEOF / nodeSize) - 1;
 
-	if ( (node->fLink > maxNode) || (node->bLink > maxNode) )
+	if ((node->fLink > maxNode) || (node->bLink > maxNode))
 		return fsBTInvalidNodeErr;
 
 	/////////////// check node type (leaf, index, header, map) //////////////////
 
-	if ( (node->kind < kBTLeafNode) || (node->kind > kBTMapNode) )
+	if ((node->kind < kBTLeafNode) || (node->kind > kBTMapNode))
 		return fsBTInvalidNodeErr;
 
 	///////////////////// is node height > tree depth? //////////////////////////
 
-	if ( node->height > btreePtr->treeDepth )
+	if (node->height > btreePtr->treeDepth)
 		return fsBTInvalidNodeErr;
 
 	//////////////////////// check number of records ////////////////////////////
-		
-	//XXX can we calculate a more accurate minimum record size?
-	maxRecords = ( nodeSize - sizeof (BTNodeDescriptor) ) >> 3;
+
+	// XXX can we calculate a more accurate minimum record size?
+	maxRecords = (nodeSize - sizeof(BTNodeDescriptor)) >> 3;
 
 	if (node->numRecords == 0 || node->numRecords > maxRecords)
 		return fsBTInvalidNodeErr;
 
 	////////////////////////// check record offsets /////////////////////////////
 
-	index = node->numRecords;		/* start index at free space */
-	prevOffset = nodeSize - (index << 1);	/* use 2 bytes past end of free space */
+	index = node->numRecords;	      /* start index at free space */
+	prevOffset = nodeSize - (index << 1); /* use 2 bytes past end of free space */
 
 	do {
-		offset = GetRecordOffset (btreePtr, node, index);
-			
-		if (offset & 1)								// offset is odd
+		offset = GetRecordOffset(btreePtr, node, index);
+
+		if (offset & 1) // offset is odd
 			return fsBTInvalidNodeErr;
-		
-		if (offset >= prevOffset)					// offset >= previous offset
+
+		if (offset >= prevOffset) // offset >= previous offset
 			return fsBTInvalidNodeErr;
 
 		/* reject keys that overflow record slot */
-		if ((node->kind == kBTLeafNode) &&
-		    (index < node->numRecords) &&	/* ignore free space record */
-		    (CalcKeySize(btreePtr, (KeyPtr) ((Ptr)node + offset)) > (prevOffset - offset))) {
+		if ((node->kind == kBTLeafNode) && (index < node->numRecords) && /* ignore free space record */
+		    (CalcKeySize(btreePtr, (KeyPtr)((Ptr)node + offset)) > (prevOffset - offset))) {
 			return fsBTInvalidNodeErr;
 		}
-		
-		prevOffset = offset;
-	} while ( --index >= 0 );
 
-	if (offset < sizeof (BTNodeDescriptor) )	// first offset < minimum ?
+		prevOffset = offset;
+	} while (--index >= 0);
+
+	if (offset < sizeof(BTNodeDescriptor)) // first offset < minimum ?
 		return fsBTInvalidNodeErr;
-	
+
 	return noErr;
 }
 
-
 #if HFS_DIAGNOSTIC
-static void PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber)
+static void
+PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber)
 {
-	/*	
+	/*
 	struct row {
 		UInt16	word[8];
 	};
@@ -575,13 +520,12 @@ static void PrintNode(const NodeDescPtr node, UInt16 nodeSize, UInt32 nodeNumber
 	rows = nodeSize/16;
 	lp = (UInt32*) node;
 	offset = 0;
-	
+
 	while (rows-- > 0)
 		PRINTIT("%04X: %08lX %08lX %08lX %08lX\n", (u_int)offset++, *lp++, *lp++, *lp++, *lp++);
 	*/
 }
 #endif
-
 
 /*-------------------------------------------------------------------------------
 
@@ -591,20 +535,21 @@ Function:	Writes zeroes from beginning of node for nodeSize bytes.
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node to clear
-						
+
 Result:		none
 -------------------------------------------------------------------------------*/
 
-void	ClearNode	(BTreeControlBlockPtr	btreePtr, NodeDescPtr	 node )
+void
+ClearNode(BTreeControlBlockPtr btreePtr, NodeDescPtr node)
 {
-	ClearMemory( node, btreePtr->nodeSize );
+	ClearMemory(node, btreePtr->nodeSize);
 }
 
 /*-------------------------------------------------------------------------------
 
 Routine:	InsertRecord	-	Inserts a record into a BTree node.
 
-Function:	
+Function:
 
 Note:		Record size must be even!
 
@@ -617,61 +562,52 @@ Result:		noErr		- success
 			fsBTFullErr	- record larger than remaining free space.
 -------------------------------------------------------------------------------*/
 
-Boolean		InsertRecord	(BTreeControlBlockPtr	btreePtr,
-							 NodeDescPtr 			node,
-							 UInt16	 				index,
-							 RecordPtr				recPtr,
-							 UInt16					recSize )
+Boolean
+InsertRecord(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index, RecordPtr recPtr, UInt16 recSize)
 {
-	UInt16		freeSpace;
-	UInt16		indexOffset;
-	UInt16		freeOffset;
-	UInt16		bytesToMove;
-	void	   *src;
-	void	   *dst;
-	
+	UInt16 freeSpace;
+	UInt16 indexOffset;
+	UInt16 freeOffset;
+	UInt16 bytesToMove;
+	void *src;
+	void *dst;
+
 	//// will new record fit in node?
 
-	freeSpace = GetNodeFreeSize (btreePtr, node);
-											//€€ we could get freeOffset & calc freeSpace
-	if ( freeSpace < recSize + 2)
-	{
+	freeSpace = GetNodeFreeSize(btreePtr, node);
+	// €€ we could get freeOffset & calc freeSpace
+	if (freeSpace < recSize + 2) {
 		return false;
 	}
 
-	
 	//// make hole for new record
 
-	indexOffset = GetRecordOffset (btreePtr, node, index);
-	freeOffset	= GetRecordOffset (btreePtr, node, node->numRecords);
+	indexOffset = GetRecordOffset(btreePtr, node, index);
+	freeOffset = GetRecordOffset(btreePtr, node, node->numRecords);
 
-	src = ((Ptr) node) + indexOffset;
-	dst = ((Ptr) src)  + recSize;
+	src = ((Ptr)node) + indexOffset;
+	dst = ((Ptr)src) + recSize;
 	bytesToMove = freeOffset - indexOffset;
 	if (bytesToMove)
-		MoveRecordsRight (src, dst, bytesToMove);
-
+		MoveRecordsRight(src, dst, bytesToMove);
 
 	//// adjust offsets for moved records
 
-	InsertOffset (btreePtr, node, index, recSize);
-
+	InsertOffset(btreePtr, node, index, recSize);
 
 	//// move in the new record
 
-	dst = ((Ptr) node) + indexOffset;
-	MoveRecordsLeft (recPtr, dst, recSize);
+	dst = ((Ptr)node) + indexOffset;
+	MoveRecordsLeft(recPtr, dst, recSize);
 
 	return true;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
 Routine:	InsertKeyRecord	-	Inserts a record into a BTree node.
 
-Function:	
+Function:
 
 Note:		Record size must be even!
 
@@ -687,103 +623,87 @@ Result:		noErr		- success
 			fsBTFullErr	- record larger than remaining free space.
 -------------------------------------------------------------------------------*/
 
-Boolean		InsertKeyRecord		(BTreeControlBlockPtr	 btreePtr,
-								 NodeDescPtr 			 node,
-								 UInt16	 				 index,
-								 KeyPtr					 keyPtr,
-								 UInt16					 keyLength,
-								 RecordPtr				 recPtr,
-								 UInt16					 recSize )
+Boolean
+InsertKeyRecord(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index, KeyPtr keyPtr, UInt16 keyLength, RecordPtr recPtr, UInt16 recSize)
 {
-	UInt16		freeSpace;
-	UInt16		indexOffset;
-	UInt16		freeOffset;
-	UInt16		bytesToMove;
-	UInt8 *		src;
-	UInt8 *		dst;
-	UInt16		keySize;
-	UInt16		rawKeyLength;
-	UInt16		sizeOfLength;
-	
+	UInt16 freeSpace;
+	UInt16 indexOffset;
+	UInt16 freeOffset;
+	UInt16 bytesToMove;
+	UInt8 *src;
+	UInt8 *dst;
+	UInt16 keySize;
+	UInt16 rawKeyLength;
+	UInt16 sizeOfLength;
+
 	//// calculate actual key size
 
-	if ( btreePtr->attributes & kBTBigKeysMask )
+	if (btreePtr->attributes & kBTBigKeysMask)
 		keySize = keyLength + sizeof(UInt16);
 	else
 		keySize = keyLength + sizeof(UInt8);
-	
-	if ( M_IsOdd (keySize) )
-		++keySize;			// add pad byte
 
+	if (M_IsOdd(keySize))
+		++keySize; // add pad byte
 
 	//// will new record fit in node?
 
-	freeSpace = GetNodeFreeSize (btreePtr, node);
-											//€€ we could get freeOffset & calc freeSpace
-	if ( freeSpace < keySize + recSize + 2)
-	{
+	freeSpace = GetNodeFreeSize(btreePtr, node);
+	// €€ we could get freeOffset & calc freeSpace
+	if (freeSpace < keySize + recSize + 2) {
 		return false;
 	}
 
-	
 	//// make hole for new record
 
-	indexOffset = GetRecordOffset (btreePtr, node, index);
-	freeOffset	= GetRecordOffset (btreePtr, node, node->numRecords);
+	indexOffset = GetRecordOffset(btreePtr, node, index);
+	freeOffset = GetRecordOffset(btreePtr, node, node->numRecords);
 
-	src = ((UInt8 *) node) + indexOffset;
-	dst = ((UInt8 *) src) + keySize + recSize;
+	src = ((UInt8 *)node) + indexOffset;
+	dst = ((UInt8 *)src) + keySize + recSize;
 	bytesToMove = freeOffset - indexOffset;
 	if (bytesToMove)
-		MoveRecordsRight (src, dst, bytesToMove);
-
+		MoveRecordsRight(src, dst, bytesToMove);
 
 	//// adjust offsets for moved records
 
-	InsertOffset (btreePtr, node, index, keySize + recSize);
-	
+	InsertOffset(btreePtr, node, index, keySize + recSize);
 
 	//// copy record key
 
-	dst = ((UInt8 *) node) + indexOffset;
+	dst = ((UInt8 *)node) + indexOffset;
 
-	if ( btreePtr->attributes & kBTBigKeysMask )
-	{
+	if (btreePtr->attributes & kBTBigKeysMask) {
 		// *((UInt16*) dst)++ = keyLength;		// use keyLength rather than key.length
 		MOVE_PTR_SET(dst, UInt16, 1, keyLength);
 		rawKeyLength = keyPtr->length16;
 		sizeOfLength = 2;
-	}
-	else
-	{
-		*dst++ = keyLength;					// use keyLength rather than key.length
+	} else {
+		*dst++ = keyLength; // use keyLength rather than key.length
 		rawKeyLength = keyPtr->length8;
 		sizeOfLength = 1;
 	}
-	
-	MoveRecordsLeft ( ((UInt8 *) keyPtr) + sizeOfLength, dst, rawKeyLength);	// copy key
+
+	MoveRecordsLeft(((UInt8 *)keyPtr) + sizeOfLength, dst, rawKeyLength); // copy key
 
 	// any pad bytes?
 	bytesToMove = keySize - rawKeyLength;
 	if (bytesToMove)
-		ClearMemory (dst + rawKeyLength, bytesToMove);	// clear pad bytes in index key
-
+		ClearMemory(dst + rawKeyLength, bytesToMove); // clear pad bytes in index key
 
 	//// copy record data
 
-	dst = ((UInt8 *) node) + indexOffset + keySize;
-	MoveRecordsLeft (recPtr, dst, recSize);
+	dst = ((UInt8 *)node) + indexOffset + keySize;
+	MoveRecordsLeft(recPtr, dst, recSize);
 
 	return true;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
 Routine:	DeleteRecord	-	Deletes a record from a BTree node.
 
-Function:	
+Function:
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node to insert the record
@@ -792,38 +712,34 @@ Input:		btreePtr		- pointer to BTree control block
 Result:		none
 -------------------------------------------------------------------------------*/
 
-void		DeleteRecord	(BTreeControlBlockPtr	btreePtr,
-							 NodeDescPtr 			node,
-							 UInt16	 				index )
+void
+DeleteRecord(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index)
 {
-	SInt16		indexOffset;
-	SInt16		nextOffset;
-	SInt16		freeOffset;
-	SInt16		bytesToMove;
-	void	   *src;
-	void	   *dst;
-	
-	//// compress records
-	indexOffset = GetRecordOffset (btreePtr, node, index);
-	nextOffset	= GetRecordOffset (btreePtr, node, index + 1);
-	freeOffset	= GetRecordOffset (btreePtr, node, node->numRecords);
+	SInt16 indexOffset;
+	SInt16 nextOffset;
+	SInt16 freeOffset;
+	SInt16 bytesToMove;
+	void *src;
+	void *dst;
 
-	src = ((Ptr) node) + nextOffset;
-	dst = ((Ptr) node) + indexOffset;
+	//// compress records
+	indexOffset = GetRecordOffset(btreePtr, node, index);
+	nextOffset = GetRecordOffset(btreePtr, node, index + 1);
+	freeOffset = GetRecordOffset(btreePtr, node, node->numRecords);
+
+	src = ((Ptr)node) + nextOffset;
+	dst = ((Ptr)node) + indexOffset;
 	bytesToMove = freeOffset - nextOffset;
 	if (bytesToMove)
-		MoveRecordsLeft (src, dst, bytesToMove);
+		MoveRecordsLeft(src, dst, bytesToMove);
 
 	//// Adjust the offsets
-	DeleteOffset (btreePtr, node, index);
-	
+	DeleteOffset(btreePtr, node, index);
+
 	/* clear out new free space */
 	bytesToMove = nextOffset - indexOffset;
 	ClearMemory(GetRecordAddress(btreePtr, node, node->numRecords), bytesToMove);
-
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -845,44 +761,40 @@ Result:		true	- success (index = record index)
 			false	- key did not match anything in node (index = insert index)
 -------------------------------------------------------------------------------*/
 Boolean
-SearchNode( BTreeControlBlockPtr btreePtr,
-	    NodeDescPtr node,
-	    KeyPtr searchKey,
-	    UInt16 *returnIndex )
+SearchNode(BTreeControlBlockPtr btreePtr, NodeDescPtr node, KeyPtr searchKey, UInt16 *returnIndex)
 {
-	SInt32		lowerBound;
-	SInt32		upperBound;
-	SInt32		index;
-	SInt32		result;
-	KeyPtr		trialKey;
-	UInt16		*offset;
+	SInt32 lowerBound;
+	SInt32 upperBound;
+	SInt32 index;
+	SInt32 result;
+	KeyPtr trialKey;
+	UInt16 *offset;
 	KeyCompareProcPtr compareProc = btreePtr->keyCompareProc;
 
 	lowerBound = 0;
 	upperBound = node->numRecords - 1;
-	offset = (UInt16 *) ((UInt8 *)(node) + (btreePtr)->nodeSize - kOffsetSize);
-	
+	offset = (UInt16 *)((UInt8 *)(node) + (btreePtr)->nodeSize - kOffsetSize);
+
 	while (lowerBound <= upperBound) {
 		index = (lowerBound + upperBound) >> 1;
 
-		trialKey = (KeyPtr) ((UInt8 *)node + *(offset - index));
-		
+		trialKey = (KeyPtr)((UInt8 *)node + *(offset - index));
+
 		result = compareProc(searchKey, trialKey);
 
-		if (result <  0) {
-			upperBound = index - 1;	  /* search < trial */
-		} else if (result >  0) {
-			lowerBound = index + 1;	  /* search > trial */
-		} else {	
-			*returnIndex = index;	  /* search == trial */
+		if (result < 0) {
+			upperBound = index - 1; /* search < trial */
+		} else if (result > 0) {
+			lowerBound = index + 1; /* search > trial */
+		} else {
+			*returnIndex = index; /* search == trial */
 			return true;
 		}
 	}
-	
-	*returnIndex = lowerBound;	/* lowerBound is insert index */
+
+	*returnIndex = lowerBound; /* lowerBound is insert index */
 	return false;
 }
-
 
 /*-------------------------------------------------------------------------------
 
@@ -903,17 +815,13 @@ Output:		keyPtr		- pointer to beginning of key for record
 Result:		none
 -------------------------------------------------------------------------------*/
 
-OSStatus	GetRecordByIndex	(BTreeControlBlockPtr	 btreePtr,
-								 NodeDescPtr			 node,
-								 UInt16					 index,
-								 KeyPtr					*keyPtr,
-								 UInt8 *				*dataPtr,
-								 UInt16					*dataSize )
+OSStatus
+GetRecordByIndex(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index, KeyPtr *keyPtr, UInt8 **dataPtr, UInt16 *dataSize)
 {
-	UInt16		offset;
-	UInt16		nextOffset;
-	UInt16		keySize;
-	
+	UInt16 offset;
+	UInt16 nextOffset;
+	UInt16 keySize;
+
 	//
 	//	Make sure index is valid (in range 0..numRecords-1)
 	//
@@ -921,25 +829,23 @@ OSStatus	GetRecordByIndex	(BTreeControlBlockPtr	 btreePtr,
 		return fsBTRecordNotFoundErr;
 
 	//// find keyPtr
-	offset		= GetRecordOffset (btreePtr, node, index);
-	*keyPtr		= (KeyPtr) ((Ptr)node + offset);
+	offset = GetRecordOffset(btreePtr, node, index);
+	*keyPtr = (KeyPtr)((Ptr)node + offset);
 
 	//// find dataPtr
-	keySize	= CalcKeySize(btreePtr, *keyPtr);
-	if ( M_IsOdd (keySize) )
-		++keySize;	// add pad byte
+	keySize = CalcKeySize(btreePtr, *keyPtr);
+	if (M_IsOdd(keySize))
+		++keySize; // add pad byte
 
-	offset += keySize;			// add the key length to find data offset
-	*dataPtr = (UInt8 *) node + offset;
-	
+	offset += keySize; // add the key length to find data offset
+	*dataPtr = (UInt8 *)node + offset;
+
 	//// find dataSize
-	nextOffset	= GetRecordOffset (btreePtr, node, index + 1);
-	*dataSize	= nextOffset - offset;
-	
+	nextOffset = GetRecordOffset(btreePtr, node, index + 1);
+	*dataSize = nextOffset - offset;
+
 	return noErr;
 }
-								 
-
 
 /*-------------------------------------------------------------------------------
 
@@ -954,22 +860,21 @@ Input:		btreePtr		- pointer to BTree control block
 Result:		- number of bytes used for data and offsets in the node.
 -------------------------------------------------------------------------------*/
 
-UInt16		GetNodeDataSize	(BTreeControlBlockPtr	btreePtr, NodeDescPtr	 node )
+UInt16
+GetNodeDataSize(BTreeControlBlockPtr btreePtr, NodeDescPtr node)
 {
 	UInt16 freeOffset;
-	
-	freeOffset = GetRecordOffset (btreePtr, node, node->numRecords);
-	
-	return	freeOffset + (node->numRecords << 1) - sizeof (BTNodeDescriptor);
+
+	freeOffset = GetRecordOffset(btreePtr, node, node->numRecords);
+
+	return freeOffset + (node->numRecords << 1) - sizeof(BTNodeDescriptor);
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
 Routine:	GetNodeFreeSize	-	Return the amount of free space in the node.
 
-Function:	
+Function:
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node that contains the record
@@ -977,22 +882,21 @@ Input:		btreePtr		- pointer to BTree control block
 Result:		- number of bytes of free space in the node.
 -------------------------------------------------------------------------------*/
 
-UInt16		GetNodeFreeSize	(BTreeControlBlockPtr	btreePtr, NodeDescPtr	 node )
+UInt16
+GetNodeFreeSize(BTreeControlBlockPtr btreePtr, NodeDescPtr node)
 {
-	UInt16	freeOffset;
-	
-	freeOffset = GetRecordOffset (btreePtr, node, node->numRecords);	//€€ inline?
-	
+	UInt16 freeOffset;
+
+	freeOffset = GetRecordOffset(btreePtr, node, node->numRecords); // €€ inline?
+
 	return btreePtr->nodeSize - freeOffset - (node->numRecords << 1) - kOffsetSize;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
 Routine:	GetRecordOffset	-	Return the offset for record "index".
 
-Function:	
+Function:
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node that contains the record
@@ -1015,13 +919,11 @@ UInt16		GetRecordOffset	(BTreeControlBlockPtr	btreePtr,
 }
 #endif
 
-
-
 /*-------------------------------------------------------------------------------
 
 Routine:	GetRecordAddress	-	Return address of record "index".
 
-Function:	
+Function:
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node that contains the record
@@ -1043,13 +945,11 @@ UInt8 *		GetRecordAddress	(BTreeControlBlockPtr	btreePtr,
 }
 #endif
 
-
-
 /*-------------------------------------------------------------------------------
 
 Routine:	GetRecordSize	-	Return size of record "index".
 
-Function:	
+Function:
 
 Note:		This does not work on the FreeSpace index!
 
@@ -1060,23 +960,20 @@ Input:		btreePtr		- pointer to BTree control block
 Result:		- size of record "index".
 -------------------------------------------------------------------------------*/
 
-UInt16		GetRecordSize		(BTreeControlBlockPtr	btreePtr,
-								 NodeDescPtr			node,
-								 UInt16					index )
+UInt16
+GetRecordSize(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index)
 {
-	UInt16	*pos;
-		
-	pos = (UInt16 *) ((Ptr)node + btreePtr->nodeSize - (index << 1) - kOffsetSize);
-	
-	return  *(pos-1) - *pos;
+	UInt16 *pos;
+
+	pos = (UInt16 *)((Ptr)node + btreePtr->nodeSize - (index << 1) - kOffsetSize);
+
+	return *(pos - 1) - *pos;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	GetOffsetAddress	-	Return address of offset for record "index".
 
-Function:	
+Function:
 
 Input:		btreePtr		- pointer to BTree control block
 			node			- pointer to node that contains the record
@@ -1085,18 +982,15 @@ Input:		btreePtr		- pointer to BTree control block
 Result:		- pointer to offset for record "index".
 -------------------------------------------------------------------------------*/
 
-UInt16	   *GetOffsetAddress	(BTreeControlBlockPtr	btreePtr,
-								 NodeDescPtr			node,
-								 UInt16					index )
+UInt16 *
+GetOffsetAddress(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index)
 {
-	void	*pos;
-	
-	pos = (Ptr)node + btreePtr->nodeSize - (index << 1) -2;
-	
+	void *pos;
+
+	pos = (Ptr)node + btreePtr->nodeSize - (index << 1) - 2;
+
 	return (UInt16 *)pos;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	GetChildNodeNum	-	Return child node number from index record "index".
@@ -1113,19 +1007,16 @@ Input:		btreePtr		- pointer to BTree control block
 Result:		- child node number from record "index".
 -------------------------------------------------------------------------------*/
 
-UInt32		GetChildNodeNum			(BTreeControlBlockPtr	 btreePtr,
-									 NodeDescPtr			 nodePtr,
-									 UInt16					 index )
+UInt32
+GetChildNodeNum(BTreeControlBlockPtr btreePtr, NodeDescPtr nodePtr, UInt16 index)
 {
-	UInt8 *		pos;
-	
-	pos = GetRecordAddress (btreePtr, nodePtr, index);
-	pos += CalcKeySize(btreePtr, (BTreeKey *) pos);		// key.length + size of length field
-	
-	return	*(UInt32 *)pos;
+	UInt8 *pos;
+
+	pos = GetRecordAddress(btreePtr, nodePtr, index);
+	pos += CalcKeySize(btreePtr, (BTreeKey *)pos); // key.length + size of length field
+
+	return *(UInt32 *)pos;
 }
-
-
 
 /*-------------------------------------------------------------------------------
 Routine:	InsertOffset	-	Add an offset and adjust existing offsets by delta.
@@ -1142,24 +1033,20 @@ Input:		btreePtr	- pointer to BTree control block
 Result:		none
 -------------------------------------------------------------------------------*/
 
-void		InsertOffset		(BTreeControlBlockPtr	 btreePtr,
-								 NodeDescPtr			 node,
-								 UInt16					 index,
-								 UInt16					 delta )
+void
+InsertOffset(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index, UInt16 delta)
 {
-	UInt16		*src, *dst;
-	UInt16		 numOffsets;
-	
-	src = GetOffsetAddress (btreePtr, node, node->numRecords);	// point to free offset
-	dst = src - 1; 												// point to new offset
-	numOffsets = node->numRecords++ - index;			// subtract index  & postincrement
-	
+	UInt16 *src, *dst;
+	UInt16 numOffsets;
+
+	src = GetOffsetAddress(btreePtr, node, node->numRecords); // point to free offset
+	dst = src - 1;						  // point to new offset
+	numOffsets = node->numRecords++ - index;		  // subtract index  & postincrement
+
 	do {
-		*dst++ = *src++ + delta;								// to tricky?
+		*dst++ = *src++ + delta; // to tricky?
 	} while (numOffsets--);
 }
-
-
 
 /*-------------------------------------------------------------------------------
 
@@ -1176,23 +1063,19 @@ Input:		btreePtr	- pointer to BTree control block
 Result:		none
 -------------------------------------------------------------------------------*/
 
-void		DeleteOffset		(BTreeControlBlockPtr	 btreePtr,
-								 NodeDescPtr			 node,
-								 UInt16					 index )
+void
+DeleteOffset(BTreeControlBlockPtr btreePtr, NodeDescPtr node, UInt16 index)
 {
-	UInt16		*src, *dst;
-	UInt16		 numOffsets;
-	UInt16		 delta;
-	
-	dst			= GetOffsetAddress (btreePtr, node, index);
-	src			= dst - 1;
-	delta		= *src - *dst;
-	numOffsets	= --node->numRecords - index;	// predecrement numRecords & subtract index
-	
-	while (numOffsets--)
-	{
-		*--dst = *--src - delta;				// work our way left
+	UInt16 *src, *dst;
+	UInt16 numOffsets;
+	UInt16 delta;
+
+	dst = GetOffsetAddress(btreePtr, node, index);
+	src = dst - 1;
+	delta = *src - *dst;
+	numOffsets = --node->numRecords - index; // predecrement numRecords & subtract index
+
+	while (numOffsets--) {
+		*--dst = *--src - delta; // work our way left
 	}
 }
-
-

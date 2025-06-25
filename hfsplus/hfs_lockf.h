@@ -2,13 +2,13 @@
  * Copyright (c) 1999,2001-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -61,8 +61,8 @@
  *	derived from @(#)lockf.h	8.2 (Berkeley) 10/26/94
  */
 
-#ifndef  __HFS_LOCKF__
-#define  __HFS_LOCKF__
+#ifndef __HFS_LOCKF__
+#define __HFS_LOCKF__
 
 #include <sys/appleapiopts.h>
 
@@ -77,41 +77,39 @@
 TAILQ_HEAD(locklist, hfslockf);
 
 struct hfslockf {
-	short	lf_flags;	    /* Semantics: F_POSIX, F_FLOCK, F_WAIT */
-	short	lf_type;	    /* Lock type: F_RDLCK, F_WRLCK */
-	off_t	lf_start;	    /* Byte # of the start of the lock */
-	off_t	lf_end;		    /* Byte # of the end of the lock (-1=EOF) */
-	caddr_t	lf_id;		    /* Id of the resource holding the lock */
-	struct	filefork *lf_fork;  /* Back pointer to the file fork */
-	struct	hfslockf *lf_next;  /* Pointer to the next lock on this fork */
-	struct	locklist lf_blkhd;  /* List of requests blocked on this lock */
-	TAILQ_ENTRY(hfslockf) lf_block;/* A request waiting for a lock */
+	short lf_flags;			/* Semantics: F_POSIX, F_FLOCK, F_WAIT */
+	short lf_type;			/* Lock type: F_RDLCK, F_WRLCK */
+	off_t lf_start;			/* Byte # of the start of the lock */
+	off_t lf_end;			/* Byte # of the end of the lock (-1=EOF) */
+	caddr_t lf_id;			/* Id of the resource holding the lock */
+	struct filefork *lf_fork;	/* Back pointer to the file fork */
+	struct hfslockf *lf_next;	/* Pointer to the next lock on this fork */
+	struct locklist lf_blkhd;	/* List of requests blocked on this lock */
+	TAILQ_ENTRY(hfslockf) lf_block; /* A request waiting for a lock */
 };
 
 /* Maximum length of sleep chains to traverse to try and detect deadlock. */
 #define MAXDEPTH 50
 
 __BEGIN_DECLS
-void	 hfs_addblock __P((struct hfslockf *, struct hfslockf *));
-int	 hfs_clearlock __P((struct hfslockf *));
-int	 hfs_findoverlap __P((struct hfslockf *,
-	    struct hfslockf *, int, struct hfslockf ***, struct hfslockf **));
-struct hfslockf *
-	 hfs_getblock __P((struct hfslockf *));
-int	 hfs_getlock __P((struct hfslockf *, struct flock *));
-int	 hfs_setlock __P((struct hfslockf *));
-void	 hfs_split __P((struct hfslockf *, struct hfslockf *));
-void	 hfs_wakelock __P((struct hfslockf *));
+void hfs_addblock __P((struct hfslockf *, struct hfslockf *));
+int hfs_clearlock __P((struct hfslockf *));
+int hfs_findoverlap __P((struct hfslockf *, struct hfslockf *, int, struct hfslockf ***, struct hfslockf **));
+struct hfslockf *hfs_getblock __P((struct hfslockf *));
+int hfs_getlock __P((struct hfslockf *, struct flock *));
+int hfs_setlock __P((struct hfslockf *));
+void hfs_split __P((struct hfslockf *, struct hfslockf *));
+void hfs_wakelock __P((struct hfslockf *));
 __END_DECLS
 
 #ifdef LOCKF_DEBUG
 extern int lockf_debug;
 
 __BEGIN_DECLS
-void	hfs_lprint __P((char *, struct hfslockf *));
-void	hfs_lprintlist __P((char *, struct hfslockf *));
+void hfs_lprint __P((char *, struct hfslockf *));
+void hfs_lprintlist __P((char *, struct hfslockf *));
 __END_DECLS
-#endif	/* LOCKF_DEBUG */
+#endif /* LOCKF_DEBUG */
 #endif /* __APPLE_API_PRIVATE */
 #endif /* _KERNEL */
-#endif  /* __HFS_LOCKF__ */
+#endif /* __HFS_LOCKF__ */

@@ -378,7 +378,7 @@ OSErr FindExtentRecord(
 	*foundHint = 0;
 	fcb = GetFileControlBlock(vcb->extentsRefNum);
 	
-	btIterator = (BTreeIterator *) MALLOC(sizeof(*btIterator), M_TEMP, M_WAITOK);
+	btIterator = (BTreeIterator *) malloc(sizeof(*btIterator), M_TEMP, M_WAITOK);
 	bzero(btIterator, sizeof(*btIterator));
 
 	if (vcb->vcbSigWord == kHFSSigWord) {
@@ -503,7 +503,7 @@ static OSErr CreateExtentRecord(
 	if (err)
 		return err;
 
-	btIterator = (BTreeIterator *)MALLOC(sizeof(*btIterator), M_TEMP, M_WAITOK);
+	btIterator = (BTreeIterator *)malloc(sizeof(*btIterator), M_TEMP, M_WAITOK);
 	bzero(btIterator, sizeof(*btIterator));
 	
 	if (vcb->vcbSigWord == kHFSSigWord) {
@@ -561,7 +561,7 @@ OSErr DeleteExtentRecord(
 	if (err)
 		return err;
 
-	btIterator = (BTreeIterator *)MALLOC(sizeof(*btIterator), M_TEMP, M_WAITOK);
+	btIterator = (BTreeIterator *)malloc(sizeof(*btIterator), M_TEMP, M_WAITOK);
 	bzero(btIterator, sizeof(*btIterator));
 	
 	if (vcb->vcbSigWord == kHFSSigWord) {
@@ -1757,7 +1757,7 @@ static OSErr UpdateExtentRecord (
 		if (err)
 			return err;
 
-		btIterator = (BTreeIterator *)MALLOC(sizeof(*btIterator), M_TEMP, M_WAITOK);
+		btIterator = (BTreeIterator *)malloc(sizeof(*btIterator), M_TEMP, M_WAITOK);
 		bzero(btIterator, sizeof(*btIterator));
 
 		if (vcb->vcbSigWord == kHFSSigWord) {

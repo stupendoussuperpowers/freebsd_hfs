@@ -26,8 +26,9 @@
 #ifndef _HFS_ENCODINGS_H_
 #define _HFS_ENCODINGS_H_
 
-#include <hfsplus/hfs_macos_defs.h>
 #include <sys/appleapiopts.h>
+
+#include <hfsplus/hfs_macos_defs.h>
 
 #ifdef __APPLE_API_UNSTABLE
 /*
@@ -35,11 +36,11 @@
  */
 #define HFS_ENCODINGBIAS 1 /* encoding matching CJK bias */
 
-#define CTL_HFS_NAMES                                                          \
-  {                                                                            \
-    { 0, 0 },                                                                  \
-    { "encodingbias", CTLTYPE_INT },                                           \
-  }
+#define CTL_HFS_NAMES                            \
+	{                                        \
+		{ 0, 0 },                        \
+		{ "encodingbias", CTLTYPE_INT }, \
+	}
 
 /*
  * HFS Filename Encoding Converters Interface
@@ -54,14 +55,9 @@
  * encoding conversion routines.
  */
 
-typedef int (*hfs_to_unicode_func_t)(const Str31 hfs_str,
-                                     UniChar* uni_str,
-                                     UInt32 maxCharLen,
-                                     UInt32* usedCharLen);
+typedef int (*hfs_to_unicode_func_t)(const Str31 hfs_str, UniChar *uni_str, UInt32 maxCharLen, UInt32 *usedCharLen);
 
-typedef int (*unicode_to_hfs_func_t)(const UniChar* uni_str,
-                                     UInt32 unicodeChars,
-                                     Str31 hfs_str);
+typedef int (*unicode_to_hfs_func_t)(const UniChar *uni_str, UInt32 unicodeChars, Str31 hfs_str);
 
 void hfs_converterinit(void);
 void hfs_converterdestroy(void);

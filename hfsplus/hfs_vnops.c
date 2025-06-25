@@ -1,95 +1,85 @@
 #include <sys/types.h>
-
 #include <sys/param.h>
-#include <sys/module.h>
-#include <sys/kernel.h>
 #include <sys/systm.h>
-#include <sys/mount.h>
-#include <sys/vnode.h>
-
-#include <sys/fcntl.h>
-#include <sys/file.h>
-#include <sys/lockf.h>
-#include <sys/dirent.h>
-#include <sys/stat.h>
-#include <sys/rwlock.h>
 #include <sys/bio.h>
 #include <sys/buf.h>
+#include <sys/dirent.h>
+#include <sys/fcntl.h>
+#include <sys/file.h>
+#include <sys/kernel.h>
+#include <sys/lockf.h>
 #include <sys/malloc.h>
+#include <sys/module.h>
+#include <sys/mount.h>
 #include <sys/namei.h>
+#include <sys/rwlock.h>
+#include <sys/stat.h>
 #include <sys/unistd.h>
+#include <sys/vnode.h>
 
 #include <vm/vm.h>
-#include <vm/vm_param.h>
 #include <vm/vm_extern.h>
 #include <vm/vm_object.h>
 #include <vm/vm_page.h>
 #include <vm/vm_pager.h>
+#include <vm/vm_param.h>
 #include <vm/vnode_pager.h>
 
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_catalog.h>
 #include <hfsplus/hfs_cnode.h>
 #include <hfsplus/hfs_dbg.h>
+#include <hfsplus/hfs_endian.h>
 #include <hfsplus/hfs_mount.h>
 #include <hfsplus/hfs_quota.h>
-#include <hfsplus/hfs_endian.h>
 
 #include "hfscommon/headers/BTreesInternal.h"
 #include "hfscommon/headers/FileMgrInternal.h"
 
-
-int hfs_bmap(struct vop_bmap_args*);
-int hfs_strategy(struct vop_strategy_args*);
-int hfs_reclaim(struct vop_reclaim_args*);
-int hfs_inactive(struct vop_inactive_args*);
-int hfs_read(struct vop_read_args*);
-int hfs_ioctl(struct vop_ioctl_args*);
+int hfs_bmap(struct vop_bmap_args *);
+int hfs_strategy(struct vop_strategy_args *);
+int hfs_reclaim(struct vop_reclaim_args *);
+int hfs_inactive(struct vop_inactive_args *);
+int hfs_read(struct vop_read_args *);
+int hfs_ioctl(struct vop_ioctl_args *);
 
 static struct dirent dot = {
-	.d_fileno = 1, 
-	.d_off = 0,
-	.d_reclen = _GENERIC_DIRLEN(1),
-	.d_namlen = 1, 
-	.d_name = ".", 
-};
-
-static struct dirent dotdot = {
 	.d_fileno = 1,
 	.d_off = 0,
-	.d_reclen = _GENERIC_DIRLEN(2), 
-	.d_namlen = 2, 
-	.d_name = ".."
+	.d_reclen = _GENERIC_DIRLEN(1),
+	.d_namlen = 1,
+	.d_name = ".",
 };
 
-static int 
-hfs_open(struct vop_open_args *ap) 
+static struct dirent dotdot = { .d_fileno = 1, .d_off = 0, .d_reclen = _GENERIC_DIRLEN(2), .d_namlen = 2, .d_name = ".." };
+
+static int
+hfs_open(struct vop_open_args *ap)
 {
 	/* {
 		struct vnode *a_vp;
 		int  a_mode;
 		struct ucred *a_cred;
 		proc_t *a_td;
-	} */ 
+	} */
 	struct vnode *vp = ap->a_vp;
 
 	/*
 	 * Files marked append-only must be opened for appending.
 	 */
-	if ((vp->v_type != VDIR) && (VTOC(vp)->c_xflags & APPEND) &&
-	    (ap->a_mode & (FWRITE | O_APPEND)) == FWRITE) {
+	if ((vp->v_type != VDIR) && (VTOC(vp)->c_xflags & APPEND) && (ap->a_mode & (FWRITE | O_APPEND)) == FWRITE) {
 		return (EPERM);
 	}
 
 	return (0);
 }
 
-static int 
-hfs_close(struct vop_close_args *ap) 
+static int
+hfs_close(struct vop_close_args *ap)
 {
 	register struct vnode *vp = ap->a_vp;
- 	register struct cnode *cp = VTOC(vp);
- 	register struct filefork *fp = VTOF(vp);
+	register struct cnode *cp = VTOC(vp);
+	register struct filefork *fp = VTOF(vp);
 	proc_t *p = ap->a_td;
 	struct timeval tv;
 	off_t leof;
@@ -108,14 +98,14 @@ hfs_close(struct vop_close_args *ap)
 	/*
 	 * VOP_CLOSE can be called with vp locked (from vclean).
 	 * We check for this case using VOP_ISLOCKED and bail.
-	 * 
+	 *
 	 * XXX During a force unmount we won't do the cleanup below!
 	 */
 	if (vp->v_type == VDIR || VOP_ISLOCKED(vp))
 		return (0);
 
 	leof = fp->ff_size;
-	
+
 	if ((fp->ff_blocks > 0) && !ISSET(cp->c_flag, C_DELETED)) {
 		// int our_type = vp->v_type;
 		// u_long our_id = vp->v_id;
@@ -129,12 +119,12 @@ hfs_close(struct vop_close_args *ap)
 		 * could get recycled (eg umount -f).  Double check
 		 * that its still ours.
 		 */
-		
-		//if (vp->v_type != our_type || vp->v_id != our_id
-		//    || cp != VTOC(vp)) {
+
+		// if (vp->v_type != our_type || vp->v_id != our_id
+		//     || cp != VTOC(vp)) {
 		//	VOP_UNLOCK(vp);
 		//	return (0);
-		//}
+		// }
 
 		cp->c_flag &= ~C_ZFWANTSYNC;
 		cp->c_zftimeout = 0;
@@ -146,8 +136,8 @@ hfs_close(struct vop_close_args *ap)
 		 * Shrink the peof to the smallest size neccessary to contain the leof.
 		 */
 		if (blks < fp->ff_blocks)
-	 		(void) VOP_TRUNCATE(vp, leof, IO_NDELAY, ap->a_cred, p);
-		
+			(void)hfs_truncate(vp, leof, IO_NDELAY, ap->a_cred, p);
+
 		/*
 		 * If the VOP_TRUNCATE didn't happen to flush the vnode's
 		 * information out to disk, force it to be updated now that
@@ -155,7 +145,7 @@ hfs_close(struct vop_close_args *ap)
 		 */
 		if (cp->c_flag & C_MODIFIED) {
 			getmicrotime(&tv);
-			VOP_UPDATE(vp, &tv, &tv, 0);
+			hfs_update(vp, &tv, &tv, 0);
 		}
 		VOP_UNLOCK(vp);
 		vrele(vp);
@@ -163,9 +153,8 @@ hfs_close(struct vop_close_args *ap)
 	return (0);
 }
 
-
 static int
-hfs_pathconf(struct vop_pathconf_args  *ap)
+hfs_pathconf(struct vop_pathconf_args *ap)
 {
 	/* {
 		struct vnode *a_vp;
@@ -182,7 +171,7 @@ hfs_pathconf(struct vop_pathconf_args  *ap)
 			*ap->a_retval = 1;
 		break;
 	case _PC_NAME_MAX:
-		*ap->a_retval = kHFSPlusMaxFileNameBytes;	/* max # of characters x max utf8 representation */
+		*ap->a_retval = kHFSPlusMaxFileNameBytes; /* max # of characters x max utf8 representation */
 		break;
 	case _PC_PATH_MAX:
 		*ap->a_retval = PATH_MAX; /* 1024 */
@@ -214,109 +203,106 @@ hfs_readdir(struct vop_readdir_args *ap)
 	register struct uio *uio = ap->a_uio;
 	struct cnode *cp = VTOC(ap->a_vp);
 	struct hfsmount *hfsmp = VTOHFS(ap->a_vp);
-	proc_t *p = curthread; 
+	proc_t *p = curthread;
 	off_t off = uio->uio_offset;
 	int retval = 0;
 	int eofflag = 0;
 	// void *user_start = NULL;
 	// int   user_len;
-	
+
 	if (uio->uio_offset < 0) {
 		return (EINVAL);
 	}
 
-	if(/*ap->a_eofflag != NULL ||*/ ap->a_cookies != NULL || ap->a_ncookies != NULL) {
+	if (/*ap->a_eofflag != NULL ||*/ ap->a_cookies != NULL || ap->a_ncookies != NULL) {
 		return (EOPNOTSUPP);
 	}
 
 	//
 	// Add . & .. entries
-	// Unlike the original implementation, diroffset needs to be set to 0 for 
+	// Unlike the original implementation, diroffset needs to be set to 0 for
 	// reading actual directory entries. Instead of modifying uio_offset manually,
-	// diroffset is "reset" to 0 by subtracting d_reclen of . and .. in 
+	// diroffset is "reset" to 0 by subtracting d_reclen of . and .. in
 	// hfs_catalog/cat_getdirentries()
 	//
 
-	if(uio->uio_offset < dot.d_reclen) {
+	if (uio->uio_offset < dot.d_reclen) {
 		dot.d_fileno = cp->c_cnid;
-		if ((retval=uiomove((caddr_t) &dot, dot.d_reclen, uio))) {
+		if ((retval = uiomove((caddr_t)&dot, dot.d_reclen, uio))) {
 			goto Exit;
 		}
 	}
 
-	if(uio->uio_offset < 2 * dotdot.d_reclen) {
+	if (uio->uio_offset < 2 * dotdot.d_reclen) {
 		dotdot.d_fileno = cp->c_parentcnid;
-		if ((retval=uiomove((caddr_t) &dotdot, dotdot.d_reclen, uio))) {
+		if ((retval = uiomove((caddr_t)&dotdot, dotdot.d_reclen, uio))) {
 			goto Exit;
 		}
 	}
 
-	/* If there are no children then we're done */	
+	/* If there are no children then we're done */
 	if (cp->c_entries == 0) {
 		eofflag = 1;
 		retval = 0;
 		goto Exit;
 	}
-	
+
 	/* Lock catalog b-tree */
 	retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
-	if (retval) { 
+	if (retval) {
 		goto Exit;
 	}
 
 	retval = cat_getdirentries(hfsmp, &cp->c_desc, uio, &eofflag);
 	/* Unlock catalog b-tree */
-	(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+	(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
 
 	if (retval != E_NONE) {
 		goto Exit;
 	}
-	
+
 	/* were we already past eof ? */
 	if (uio->uio_offset == off) {
 		retval = E_NONE;
 		goto Exit;
 	}
-	
+
 	cp->c_flag |= C_ACCESS;
 
 Exit:
 	if (ap->a_eofflag)
 		*ap->a_eofflag = eofflag;
 
-    return (retval);
-	
+	return (retval);
 }
 
 static int
-hfs_readlink(struct vop_readlink_args*ap)
+hfs_readlink(struct vop_readlink_args *ap)
 {
 	/* {
 		struct vnode *a_vp;
 		struct uio *a_uio;
 		struct ucred *a_cred;
-	} */ 
+	} */
 	int retval;
 	struct vnode *vp = ap->a_vp;
 	struct filefork *fp = VTOF(vp);
 
 	if (vp->v_type != VLNK)
 		return (EINVAL);
-   
+
 	/* Zero length sym links are not allowed */
 	if (fp->ff_size == 0 || fp->ff_size > MAXPATHLEN) {
 		VTOVCB(vp)->vcbFlags |= kHFS_DamagedVolume;
 		return (EINVAL);
 	}
-    
+
 	/* Cache the path so we don't waste buffer cache resources */
 	if (fp->ff_symlinkptr == NULL) {
 		struct buf *bp = NULL;
 
-		fp->ff_symlinkptr = (char *) malloc(fp->ff_size, M_TEMP, M_WAITOK);
-		retval = bread(vp, 0,
-				roundup((int)fp->ff_size,VTOHFS(vp)->hfs_phys_block_size),
-				ap->a_cred, &bp);
+		fp->ff_symlinkptr = (char *)malloc(fp->ff_size, M_TEMP, M_WAITOK);
+		retval = bread(vp, 0, roundup((int)fp->ff_size, VTOHFS(vp)->hfs_phys_block_size), ap->a_cred, &bp);
 		if (retval) {
 			if (bp)
 				brelse(bp);
@@ -330,7 +316,7 @@ hfs_readlink(struct vop_readlink_args*ap)
 		if (bp) {
 #ifdef DARWIN_JOURNAL
 			if (VTOHFS(vp)->jnl && (bp->b_flags & B_LOCKED) == 0) {
-				bp->b_flags |= B_INVAL;		/* data no longer needed */
+				bp->b_flags |= B_INVAL; /* data no longer needed */
 			}
 #endif
 			brelse(bp);
@@ -341,15 +327,15 @@ hfs_readlink(struct vop_readlink_args*ap)
 	return (retval);
 }
 
-
-int 
-hfs_access(struct vop_access_args *ap) {
+int
+hfs_access(struct vop_access_args *ap)
+{
 	/* {
 		struct vnode *a_vp;
 		int a_mode;
 		struct ucred *a_cred;
 		proc_t *a_td;
-	} */ 
+	} */
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 	struct ucred *cred = ap->a_cred;
@@ -396,11 +382,11 @@ hfs_access(struct vop_access_args *ap) {
 			mask |= S_IRUSR;
 		if (mode & VWRITE)
 			mask |= S_IWUSR;
-  		return ((cp->c_mode & mask) == mask ? 0 : EACCES);
+		return ((cp->c_mode & mask) == mask ? 0 : EACCES);
 	}
 
 	/* Otherwise, check the groups. */
-	if (! (VTOVFS(vp)->mnt_flag & MNT_UNKNOWNPERMISSIONS)) {
+	if (!(VTOVFS(vp)->mnt_flag & MNT_UNKNOWNPERMISSIONS)) {
 		for (i = 0, gp = cred->cr_groups; i < cred->cr_ngroups; i++, gp++)
 			if (cp->c_gid == *gp) {
 				if (mode & VEXEC)
@@ -423,7 +409,9 @@ hfs_access(struct vop_access_args *ap) {
 	return ((cp->c_mode & mask) == mask ? 0 : EACCES);
 }
 
-static int hfs_islocked(struct vop_islocked_args *ap){
+static int
+hfs_islocked(struct vop_islocked_args *ap)
+{
 	/* {
 		struct vnode *a_vp;
 		proc_t *a_td;
@@ -447,9 +435,7 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 	hfsmp = VTOHFS(vp);
 
 	/* XXX do we really want to clear the sytem cnode flags here???? */
-	if ((vp->v_vflag & VV_SYSTEM) ||
-	    (VTOVFS(vp)->mnt_flag & MNT_RDONLY) ||
-	    (cp->c_mode == 0)) {
+	if ((vp->v_vflag & VV_SYSTEM) || (VTOVFS(vp)->mnt_flag & MNT_RDONLY) || (cp->c_mode == 0)) {
 		cp->c_flag &= ~(C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE);
 		return (0);
 	}
@@ -472,10 +458,9 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 		 */
 		if (updateflag == C_ACCESS) {
 			cp->c_flag &= ~C_ACCESS;
-	
+
 			/* Its going to disk or its sufficiently newer... */
-			if ((cp->c_flag & C_ATIMEMOD) ||
-			    (access->tv_sec > (cp->c_atime + ATIME_ACCURACY))) {
+			if ((cp->c_flag & C_ATIMEMOD) || (access->tv_sec > (cp->c_atime + ATIME_ACCURACY))) {
 				cp->c_atime = access->tv_sec;
 				cp->c_flag |= C_ATIMEMOD;
 			}
@@ -498,13 +483,13 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 			cp->c_mtime = cp->c_ctime;
 		}
 	}
-	
+
 	if (cp->c_datafork)
 		dataforkp = &cp->c_datafork->ff_data;
 	if (cp->c_rsrcfork)
 		rsrcforkp = &cp->c_rsrcfork->ff_data;
 
-	p = current_proc();
+	p = curthread;
 
 	/*
 	 * For delayed allocations updates are
@@ -513,17 +498,14 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 	 *
 	 * Deleted files can defer meta data updates until inactive.
 	 */
-	if (ISSET(cp->c_flag, C_DELETED) ||
-	    (dataforkp && cp->c_datafork->ff_unallocblocks) ||
-	    (rsrcforkp && cp->c_rsrcfork->ff_unallocblocks)) {
+	if (ISSET(cp->c_flag, C_DELETED) || (dataforkp && cp->c_datafork->ff_unallocblocks) || (rsrcforkp && cp->c_rsrcfork->ff_unallocblocks)) {
 		if (updateflag & (C_CHANGE | C_UPDATE))
-			hfs_volupdate(hfsmp, VOL_UPDATE, 0);	
+			hfs_volupdate(hfsmp, VOL_UPDATE, 0);
 		cp->c_flag &= ~(C_ACCESS | C_CHANGE | C_UPDATE);
 		cp->c_flag |= C_MODIFIED;
 
 		return (0);
 	}
-
 
 #ifdef DARWIN_JOURNAL
 	// XXXdbg
@@ -532,10 +514,9 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 		if ((error = journal_start_transaction(hfsmp->jnl)) != 0) {
 			hfs_global_shared_lock_release(hfsmp);
 			return error;
-	    }
+		}
 	}
 #endif /* DARWIN_JOURNAL */
-			
 
 	/*
 	 * For files with invalid ranges (holes) the on-disk
@@ -571,16 +552,16 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 	/* XXX - waitfor is not enforced */
 	error = cat_update(hfsmp, &cp->c_desc, &cp->c_attr, dataforkp, rsrcforkp);
 
-	 /* Unlock the Catalog b-tree file. */
-	(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+	/* Unlock the Catalog b-tree file. */
+	(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
 
 	if (updateflag & (C_CHANGE | C_UPDATE))
-		hfs_volupdate(hfsmp, VOL_UPDATE, 0);	
+		hfs_volupdate(hfsmp, VOL_UPDATE, 0);
 
 #ifdef DARWIN_JOURNAL
 	// XXXdbg
 	if (hfsmp->jnl) {
-	    journal_end_transaction(hfsmp->jnl);
+		journal_end_transaction(hfsmp->jnl);
 	}
 	hfs_global_shared_lock_release(hfsmp);
 #endif /* DARWIN_JOURNAL */
@@ -591,7 +572,7 @@ hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int
 	return (error);
 }
 
-int 
+int
 hfs_btsync(struct vnode *vp, int sync_transaction)
 {
 	struct cnode *cp = VTOC(vp);
@@ -619,15 +600,14 @@ loop:
 		// XXXdbg
 		if (hfsmp->jnl && (bp->b_flags & B_LOCKED)) {
 			if ((bp->b_flags & B_META) == 0) {
-				panic("hfs: bp @ 0x%x is locked but not meta! jnl 0x%x\n",
-					  bp, hfsmp->jnl);
+				panic("hfs: bp @ 0x%x is locked but not meta! jnl 0x%x\n", bp, hfsmp->jnl);
 			}
-			// if journal_active() returns >= 0 then the journal is ok and we 
-			// shouldn't do anything to this locked block (because it is part 
-			// of a transaction).  otherwise we'll just go through the normal 
+			// if journal_active() returns >= 0 then the journal is ok and we
+			// shouldn't do anything to this locked block (because it is part
+			// of a transaction).  otherwise we'll just go through the normal
 			// code path and flush the buffer.
 			if (journal_active(hfsmp->jnl) >= 0) {
-			    continue;
+				continue;
 			}
 		}
 #endif /* DARWIN_JOURNAL */
@@ -640,7 +620,7 @@ loop:
 
 		bremfree(bp);
 
-		(void) bawrite(bp);
+		(void)bawrite(bp);
 
 		goto loop;
 	}
@@ -648,13 +628,13 @@ loop:
 
 	getmicrotime(&tv);
 	if ((vp->v_vflag & VV_SYSTEM) && (VTOF(vp)->fcbBTCBPtr != NULL))
-		(void) BTSetLastSync(VTOF(vp), tv.tv_sec);
+		(void)BTSetLastSync(VTOF(vp), tv.tv_sec);
 	cp->c_flag &= ~(C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE);
 
 	return 0;
 }
 
-static int 
+static int
 hfs_getattr(struct vop_getattr_args *ap)
 {
 	/* {
@@ -718,8 +698,7 @@ hfs_getattr(struct vop_getattr_args *ap)
 		vap->va_bytes = 0;
 	} else {
 		vap->va_size = VTOF(vp)->ff_size;
-		vap->va_bytes = (u_quad_t)cp->c_blocks *
-				    (u_quad_t)VTOVCB(vp)->blockSize;
+		vap->va_bytes = (u_quad_t)cp->c_blocks * (u_quad_t)VTOVCB(vp)->blockSize;
 		if (vp->v_type == VBLK || vp->v_type == VCHR)
 			vap->va_rdev = cp->c_rdev;
 	}
@@ -738,8 +717,7 @@ hfs_lock1(struct vop_lock1_args *ap)
 	struct mtx *ilk;
 
 	ilk = VI_MTX(ap->a_vp);
-	int retval = (lockmgr_lock_flags(ap->a_vp->v_vnlock, ap->a_flags,
-	    &ilk->lock_object, ap->a_file, ap->a_line));
+	int retval = (lockmgr_lock_flags(ap->a_vp->v_vnlock, ap->a_flags, &ilk->lock_object, ap->a_file, ap->a_line));
 
 	return (retval);
 }
@@ -747,11 +725,11 @@ hfs_lock1(struct vop_lock1_args *ap)
 static int
 hfs_unlock(struct vop_unlock_args *ap)
 {
-	 /* {
-		struct vnode *a_vp;
-		int a_flags;
-		proc_t *a_td;
-	} */
+	/* {
+	       struct vnode *a_vp;
+	       int a_flags;
+	       proc_t *a_td;
+       } */
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
 
@@ -761,8 +739,8 @@ hfs_unlock(struct vop_unlock_args *ap)
 	return (lockmgr(&cp->c_lock, LK_RELEASE, &vp->v_interlock));
 }
 
-void 
-replace_desc(struct cnode *cp, struct cat_desc *cdp) 
+void
+replace_desc(struct cnode *cp, struct cat_desc *cdp)
 {
 	/* First release allocated name buffer */
 	if (cp->c_desc.cd_flags & CD_HASBUF && cp->c_desc.cd_nameptr != 0) {
@@ -771,7 +749,7 @@ replace_desc(struct cnode *cp, struct cat_desc *cdp)
 		cp->c_desc.cd_nameptr = 0;
 		cp->c_desc.cd_namelen = 0;
 		cp->c_desc.cd_flags &= ~CD_HASBUF;
-		FREE(name, M_TEMP);
+		free(name, M_TEMP);
 	}
 	bcopy(cdp, &cp->c_desc, sizeof(cp->c_desc));
 
@@ -794,62 +772,62 @@ log_notsupp(struct vop_generic_args *ap)
 }
 
 struct vop_vector hfs_vnodeops = {
-	.vop_default =		&default_vnodeops,
+	.vop_default = &default_vnodeops,
 
-	.vop_getpages =		vnode_pager_local_getpages,
-	.vop_getpages_async =	vnode_pager_local_getpages_async,
+	.vop_getpages =  vnode_pager_local_getpages,
+	.vop_getpages_async = vnode_pager_local_getpages_async,
 
-	.vop_access =		hfs_access,
-	.vop_aclcheck =		((void*)(uintptr_t)log_notsupp),
-	.vop_advlock =		((void*)(uintptr_t)log_notsupp),
-	.vop_bmap =		hfs_bmap,
-	.vop_cachedlookup =	hfs_cachedlookup,
-	.vop_close =		hfs_close,
-	.vop_closeextattr =	((void*)(uintptr_t)log_notsupp),
-	.vop_create =		((void*)(uintptr_t)log_notsupp),
-	.vop_deleteextattr =	((void*)(uintptr_t)log_notsupp),
-	.vop_fsync =		((void*)(uintptr_t)log_notsupp),
-	.vop_getacl =		((void*)(uintptr_t)log_notsupp),
-	.vop_getattr =		hfs_getattr,
-	.vop_getextattr =	((void*)(uintptr_t)log_notsupp),
-	.vop_inactive =		hfs_inactive,
-	.vop_islocked =		hfs_islocked,
-	.vop_lock1 =		hfs_lock1,
-	.vop_ioctl =		hfs_ioctl,
-	.vop_link =		((void*)(uintptr_t)log_notsupp),
-	.vop_listextattr =	((void*)(uintptr_t)log_notsupp),
-	.vop_lookup =		hfs_lookup,
-	.vop_mkdir =		((void*)(uintptr_t)log_notsupp),
-	.vop_mknod =		((void*)(uintptr_t)log_notsupp),
-	.vop_open =		hfs_open,
-	.vop_openextattr =	((void*)(uintptr_t)log_notsupp),
-	.vop_pathconf =		hfs_pathconf,
-	.vop_poll =		((void*)(uintptr_t)log_notsupp),
-	.vop_print =		((void*)(uintptr_t)log_notsupp),
-	.vop_read =		hfs_read,
-	.vop_readdir =		hfs_readdir,
-	.vop_readlink =		hfs_readlink,
-	.vop_reclaim =		hfs_reclaim,
-	.vop_remove =		((void*)(uintptr_t)log_notsupp),
-	.vop_rename =		((void*)(uintptr_t)log_notsupp),
-	.vop_rmdir =		((void*)(uintptr_t)log_notsupp),
-	.vop_setacl =		((void*)(uintptr_t)log_notsupp),
-	.vop_setattr =		((void*)(uintptr_t)log_notsupp),
-	.vop_setextattr =	((void*)(uintptr_t)log_notsupp),
-	.vop_setlabel =		((void*)(uintptr_t)log_notsupp),
-	.vop_strategy =		hfs_strategy,
-	.vop_symlink =		((void*)(uintptr_t)log_notsupp),
-	.vop_unlock =		hfs_unlock,
-	.vop_whiteout =		((void*)(uintptr_t)log_notsupp),
-	.vop_write =		((void*)(uintptr_t)log_notsupp),
-	.vop_vptofh =		((void*)(uintptr_t)log_notsupp),
-	.vop_add_writecount =	((void*)(uintptr_t)log_notsupp),
-	.vop_vput_pair =	((void*)(uintptr_t)log_notsupp),
-	.vop_set_text =		((void*)(uintptr_t)log_notsupp),
-	.vop_unset_text = 	((void*)(uintptr_t)log_notsupp),
-	.vop_unp_bind =		((void*)(uintptr_t)log_notsupp),
-	.vop_unp_connect =	((void*)(uintptr_t)log_notsupp),
-	.vop_unp_detach =	((void*)(uintptr_t)log_notsupp),
+	.vop_access = hfs_access,
+	.vop_aclcheck = ((void *)(uintptr_t)log_notsupp),
+	.vop_advlock = ((void *)(uintptr_t)log_notsupp),
+	.vop_bmap = hfs_bmap,
+	.vop_cachedlookup = hfs_cachedlookup,
+	.vop_close = hfs_close,
+	.vop_closeextattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_create = ((void *)(uintptr_t)log_notsupp),
+	.vop_deleteextattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_fsync = ((void *)(uintptr_t)log_notsupp),
+	.vop_getacl = ((void *)(uintptr_t)log_notsupp),
+	.vop_getattr = hfs_getattr,
+	.vop_getextattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_inactive = hfs_inactive,
+	.vop_islocked = hfs_islocked,
+	.vop_lock1 = hfs_lock1,
+	.vop_ioctl = hfs_ioctl,
+	.vop_link = ((void *)(uintptr_t)log_notsupp),
+	.vop_listextattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_lookup = hfs_lookup,
+	.vop_mkdir = ((void *)(uintptr_t)log_notsupp),
+	.vop_mknod = ((void *)(uintptr_t)log_notsupp),
+	.vop_open = hfs_open,
+	.vop_openextattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_pathconf = hfs_pathconf,
+	.vop_poll = ((void *)(uintptr_t)log_notsupp),
+	.vop_print = ((void *)(uintptr_t)log_notsupp),
+	.vop_read = hfs_read,
+	.vop_readdir = hfs_readdir,
+	.vop_readlink = hfs_readlink,
+	.vop_reclaim = hfs_reclaim,
+	.vop_remove = ((void *)(uintptr_t)log_notsupp),
+	.vop_rename = ((void *)(uintptr_t)log_notsupp),
+	.vop_rmdir = ((void *)(uintptr_t)log_notsupp),
+	.vop_setacl = ((void *)(uintptr_t)log_notsupp),
+	.vop_setattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_setextattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_setlabel = ((void *)(uintptr_t)log_notsupp),
+	.vop_strategy = hfs_strategy,
+	.vop_symlink = ((void *)(uintptr_t)log_notsupp),
+	.vop_unlock = hfs_unlock,
+	.vop_whiteout = ((void *)(uintptr_t)log_notsupp),
+	.vop_write = ((void *)(uintptr_t)log_notsupp),
+	.vop_vptofh = ((void *)(uintptr_t)log_notsupp),
+	.vop_add_writecount = ((void *)(uintptr_t)log_notsupp),
+	.vop_vput_pair = ((void *)(uintptr_t)log_notsupp),
+	.vop_set_text = ((void *)(uintptr_t)log_notsupp),
+	.vop_unset_text = ((void *)(uintptr_t)log_notsupp),
+	.vop_unp_bind = ((void *)(uintptr_t)log_notsupp),
+	.vop_unp_connect = ((void *)(uintptr_t)log_notsupp),
+	.vop_unp_detach = ((void *)(uintptr_t)log_notsupp),
 };
 
 VFS_VOP_VECTOR_REGISTER(hfs_vnodeops);

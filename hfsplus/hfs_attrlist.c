@@ -2,13 +2,13 @@
  * Copyright (c) 2000-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -27,73 +27,57 @@
  */
 
 #include <sys/types.h>
-
 #include <sys/param.h>
-#include <sys/select.h>
 #include <sys/systm.h>
+#include <sys/attr.h>
 #include <sys/kernel.h>
 #include <sys/malloc.h>
-#include <sys/attr.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
 
 #include <hfsplus/hfs.h>
-#include <hfsplus/hfs_cnode.h>
-#include <hfsplus/hfs_mount.h>
-#include <hfsplus/hfs_dbg.h>
 #include <hfsplus/hfs_attrlist.h>
+#include <hfsplus/hfs_cnode.h>
+#include <hfsplus/hfs_dbg.h>
+#include <hfsplus/hfs_mount.h>
 
 #ifdef DARWIN
 extern uid_t console_user;
 #endif
 
 /* Routines that are shared by hfs_setattr: */
-extern int hfs_write_access(struct vnode *vp, struct ucred *cred,
-			struct proc *p, Boolean considerFlags);
+extern int hfs_write_access(struct vnode *vp, struct ucred *cred, struct proc *p, Boolean considerFlags);
 
-extern int hfs_chflags(struct vnode *vp, u_long flags, struct ucred *cred,
-			struct proc *p);
+extern int hfs_chflags(struct vnode *vp, u_long flags, struct ucred *cred, struct proc *p);
 
-extern int hfs_chmod(struct vnode *vp, int mode, struct ucred *cred,
-			struct proc *p);
+extern int hfs_chmod(struct vnode *vp, int mode, struct ucred *cred, struct proc *p);
 
-extern int hfs_chown(struct vnode *vp, uid_t uid, gid_t gid, struct ucred *cred,
-			struct proc *p);
+extern int hfs_chown(struct vnode *vp, uid_t uid, gid_t gid, struct ucred *cred, struct proc *p);
 
-extern char * hfs_getnamehint(struct cnode *dcp, int index);
+extern char *hfs_getnamehint(struct cnode *dcp, int index);
 
-extern void   hfs_savenamehint(struct cnode *dcp, int index, const char * namehint);
+extern void hfs_savenamehint(struct cnode *dcp, int index, const char *namehint);
 
-extern void   hfs_relnamehint(struct cnode *dcp, int index);
+extern void hfs_relnamehint(struct cnode *dcp, int index);
 
 /* Packing routines: */
 
+static void packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp);
 
-static void packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp,
-			struct vnode *vp);
+static void packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp);
 
-static void packvolattr(struct attrblock *abp, struct hfsmount *hfsmp,
-			struct vnode *vp);
+static void packcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp, struct cat_desc *cdp, struct cat_attr *cap);
 
-static void packcommonattr(struct attrblock *abp, struct hfsmount *hfsmp,
-			struct vnode *vp, struct cat_desc * cdp,
-			struct cat_attr * cap);
+static void packfileattr(struct attrblock *abp, struct hfsmount *hfsmp, struct cat_attr *cattrp, struct cat_fork *datafork, struct cat_fork *rsrcfork);
 
-static void packfileattr(struct attrblock *abp, struct hfsmount *hfsmp,
-			struct cat_attr *cattrp, struct cat_fork *datafork,
-			struct cat_fork *rsrcfork);
-
-static void packdirattr(struct attrblock *abp, struct hfsmount *hfsmp,
-			struct vnode *vp, struct cat_desc * descp,
-			struct cat_attr * cattrp);
+static void packdirattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp, struct cat_desc *descp, struct cat_attr *cattrp);
 
 static void unpackattrblk(struct attrblock *abp, struct vnode *vp);
 
 static void unpackcommonattr(struct attrblock *abp, struct vnode *vp);
 
-static void unpackvolattr(struct attrblock *abp, struct hfsmount *hfsmp,
-			struct vnode *rootvp);
-
+static void unpackvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *rootvp);
 
 /*
 
@@ -118,9 +102,8 @@ struct vop_getattrlist_args {
 	struct proc *a_p;
 };
 
-__private_extern__
 static int
-hfs_getattrlist(struct vop_getattrlist_args  *ap)
+hfs_getattrlist(struct vop_getattrlist_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
@@ -137,14 +120,11 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	struct attrblock attrblk;
 	struct cat_fork *datafp = NULL;
 	struct cat_fork *rsrcfp = NULL;
-	struct cat_fork rsrcfork = {0};
+	struct cat_fork rsrcfork = { 0 };
 	int error = 0;
 
-	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT) ||
-	    ((alist->commonattr & ~ATTR_CMN_VALIDMASK) != 0) ||
-	    ((alist->volattr & ~ATTR_VOL_VALIDMASK) != 0) ||
-	    ((alist->dirattr & ~ATTR_DIR_VALIDMASK) != 0) ||
-	    ((alist->fileattr & ~ATTR_FILE_VALIDMASK) != 0)) {
+	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT) || ((alist->commonattr & ~ATTR_CMN_VALIDMASK) != 0) || ((alist->volattr & ~ATTR_VOL_VALIDMASK) != 0) ||
+	    ((alist->dirattr & ~ATTR_DIR_VALIDMASK) != 0) || ((alist->fileattr & ~ATTR_FILE_VALIDMASK) != 0)) {
 		return (EINVAL);
 	}
 
@@ -153,9 +133,7 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	 * ATTR_VOL_INFO bit. Also, volume info requests are
 	 * mutually exclusive with all other info requests.
 	 */
-	if ((alist->volattr != 0) &&
-	    (((alist->volattr & ATTR_VOL_INFO) == 0) ||
-	     (alist->dirattr != 0) || (alist->fileattr != 0))) {
+	if ((alist->volattr != 0) && (((alist->volattr & ATTR_VOL_INFO) == 0) || (alist->dirattr != 0) || (alist->fileattr != 0))) {
 		return (EINVAL);
 	}
 
@@ -165,7 +143,7 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 		return (EINVAL);
 	}
 
-	/* Requesting volume information requires root vnode */ 
+	/* Requesting volume information requires root vnode */
 	if ((alist->volattr) && cp->c_fileid != kRootDirID)
 		return (EINVAL);
 
@@ -191,43 +169,40 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	 * an HFS volume we must be sure to create the thread
 	 * record before returning it. (yikes)
 	 */
-	if ((vp->v_type == VREG) &&
-	    (alist->commonattr & ATTR_CMN_OBJPERMANENTID) &&
-	    (VTOVCB(vp)->vcbSigWord != kHFSPlusSigWord)) {
-
+	if ((vp->v_type == VREG) && (alist->commonattr & ATTR_CMN_OBJPERMANENTID) && (VTOVCB(vp)->vcbSigWord != kHFSPlusSigWord)) {
 		if (VTOVFS(vp)->mnt_flag & MNT_RDONLY)
 			return (EROFS);
 		if ((error = hfs_write_access(vp, ap->a_cred, ap->a_p, false)) != 0)
-        		return (error);
+			return (error);
 
 		// XXXdbg
-	#ifdef DARWIN_JOURNAL
+#ifdef DARWIN_JOURNAL
 		HFS_GLOCK_ACQUIRE(hfsmp);
 		if (hfsmp->jnl) {
-		    if ((error = journal_start_transaction(hfsmp->jnl)) != 0) {
+			if ((error = journal_start_transaction(hfsmp->jnl)) != 0) {
 				HFS_GLOCK_RELEASE(hfsmp);
 				return error;
-		    }
+			}
 		}
 		/* Lock catalog b-tree */
 		error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, curthread); //  ap->a_p);
 		if (error) {
-		    if (hfsmp->jnl) {
+			if (hfsmp->jnl) {
 				journal_end_transaction(hfsmp->jnl);
 			}
 			HFS_GLOCK_RELEASE(hfsmp);
-		    return (error);
+			return (error);
 		}
 		error = cat_insertfilethread(hfsmp, &cp->c_desc);
 
 		/* Unlock catalog b-tree */
-		(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); // ap->a_p);
+		(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); // ap->a_p);
 
 		if (hfsmp->jnl) {
-		    journal_end_transaction(hfsmp->jnl);
+			journal_end_transaction(hfsmp->jnl);
 		}
 		HFS_GLOCK_RELEASE(hfsmp);
-	#endif
+#endif
 		if (error)
 			return (error);
 	}
@@ -235,13 +210,12 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	/* Establish known fork data */
 	if (cp->c_datafork != NULL) {
 		datafp = &cp->c_datafork->ff_data;
-		if ((cp->c_rsrcfork == NULL) &&
-		    (cp->c_blocks == datafp->cf_blocks))
-			rsrcfp = &rsrcfork;	/* rsrc fork is empty */
+		if ((cp->c_rsrcfork == NULL) && (cp->c_blocks == datafp->cf_blocks))
+			rsrcfp = &rsrcfork; /* rsrc fork is empty */
 	}
 	if (cp->c_rsrcfork != NULL)
 		rsrcfp = &cp->c_rsrcfork->ff_data;
-	
+
 	/*
 	 * When resource fork data is requested and its not available
 	 * in the cnode and the fork is not empty then it needs to be
@@ -254,11 +228,10 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 			return (error);
 
 		/* Get resource fork data */
-		error = cat_lookup(hfsmp, &cp->c_desc, 1,
-				(struct cat_desc *)0, (struct cat_attr *)0, &rsrcfork);
+		error = cat_lookup(hfsmp, &cp->c_desc, 1, (struct cat_desc *)0, (struct cat_attr *)0, &rsrcfork);
 
 		/* Unlock the Catalog */
-		(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); // ap->a_p);
+		(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); // ap->a_p);
 		if (error)
 			return (error);
 
@@ -266,7 +239,7 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	}
 
 	fixedblocksize = hfs_attrblksize(alist);
-	attrblocksize = fixedblocksize + (sizeof(u_long));  /* u_long for length longword */
+	attrblocksize = fixedblocksize + (sizeof(u_long)); /* u_long for length longword */
 	if (alist->commonattr & ATTR_CMN_NAME)
 		attrblocksize += kHFSPlusMaxFileNameBytes + 1;
 	if (alist->volattr & ATTR_VOL_MOUNTPOINT)
@@ -282,8 +255,8 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	attrbufsize = MIN(ap->a_uio->uio_resid, attrblocksize);
 	MALLOC5(attrbufptr, void *, attrblocksize, M_TEMP, M_WAITOK);
 	attrptr = attrbufptr;
-	*((u_long *)attrptr) = 0;  /* Set buffer length in case of errors */
-	attrptr = (void *)((u_long *)attrptr + 1);     /* Reserve space for length field */
+	*((u_long *)attrptr) = 0;		   /* Set buffer length in case of errors */
+	attrptr = (void *)((u_long *)attrptr + 1); /* Reserve space for length field */
 	varptr = ((char *)attrptr) + fixedblocksize;
 
 	attrblk.ab_attrlist = alist;
@@ -292,19 +265,17 @@ hfs_getattrlist(struct vop_getattrlist_args  *ap)
 	attrblk.ab_flags = 0;
 	attrblk.ab_blocksize = attrblocksize;
 
-	hfs_packattrblk(&attrblk, hfsmp, vp, &cp->c_desc, &cp->c_attr,
-			datafp, rsrcfp);
+	hfs_packattrblk(&attrblk, hfsmp, vp, &cp->c_desc, &cp->c_attr, datafp, rsrcfp);
 
 	/* Don't copy out more data than was generated */
 	attrbufsize = MIN(attrbufsize, (char *)varptr - (char *)attrbufptr);
-	 /* Set actual buffer length for return to caller */
+	/* Set actual buffer length for return to caller */
 	*((u_long *)attrbufptr) = attrbufsize;
 	error = uiomove((caddr_t)attrbufptr, attrbufsize, ap->a_uio);
 
-	FREE(attrbufptr, M_TEMP);
+	free(attrbufptr, M_TEMP);
 	return (error);
 }
-
 
 /*
 
@@ -327,14 +298,14 @@ struct vop_setattrlist_args {
 	struct uio *a_uio;
 	struct ucred *a_cred;
 	struct proc *a_p;
-}; 
+};
 
 static int
 hfs_setattrlist(struct vop_setattrlist_args *ap)
 {
 	struct vnode *vp = ap->a_vp;
 	struct cnode *cp = VTOC(vp);
-	struct hfsmount * hfsmp = VTOHFS(vp);
+	struct hfsmount *hfsmp = VTOHFS(vp);
 	struct attrlist *alist = ap->a_alist;
 	struct ucred *cred = ap->a_cred;
 	struct proc *p = ap->a_p;
@@ -351,37 +322,30 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 
 	if (VTOVFS(vp)->mnt_flag & MNT_RDONLY)
 		return (EROFS);
-	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT)     ||
-	    ((alist->commonattr & ~ATTR_CMN_SETMASK) != 0) ||
-	    ((alist->volattr & ~ATTR_VOL_SETMASK) != 0)    ||
-	    ((alist->dirattr & ~ATTR_DIR_SETMASK) != 0)    ||
-	    ((alist->fileattr & ~ATTR_FILE_SETMASK) != 0)) {
+	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT) || ((alist->commonattr & ~ATTR_CMN_SETMASK) != 0) || ((alist->volattr & ~ATTR_VOL_SETMASK) != 0) ||
+	    ((alist->dirattr & ~ATTR_DIR_SETMASK) != 0) || ((alist->fileattr & ~ATTR_FILE_SETMASK) != 0)) {
 		return (EINVAL);
 	}
-	/* 
+	/*
 	 * When setting volume attributes make sure
 	 * that ATTR_VOL_INFO is set and that all
 	 * the attributes are valid.
 	 */
-	if ((alist->volattr != 0) &&
-	    (((alist->volattr & ATTR_VOL_INFO) == 0) ||
-	    (alist->commonattr & ~ATTR_CMN_VOLSETMASK) ||
-	    (cp->c_fileid != kRootDirID))) {
-	    	if ((alist->volattr & ATTR_VOL_INFO) == 0)
+	if ((alist->volattr != 0) && (((alist->volattr & ATTR_VOL_INFO) == 0) || (alist->commonattr & ~ATTR_CMN_VOLSETMASK) || (cp->c_fileid != kRootDirID))) {
+		if ((alist->volattr & ATTR_VOL_INFO) == 0)
 			printf("hfs_setattrlist: you forgot to set ATTR_VOL_INFO bit!\n");
 		else
-			printf("hfs_setattrlist: you cannot set bits 0x%08X!\n",
-				alist->commonattr & ~ATTR_CMN_VOLSETMASK);
+			printf("hfs_setattrlist: you cannot set bits 0x%08X!\n", alist->commonattr & ~ATTR_CMN_VOLSETMASK);
 		return (EINVAL);
 	}
 	if (cp->c_flag & (C_NOEXISTS | C_DELETED))
 		return (ENOENT);
-	
+
 #ifdef DARWIN_JOURNAL
 	// XXXdbg - don't allow modifying the journal or journal_info_block
 	if (hfsmp->jnl && cp->c_datafork) {
 		struct HFSPlusExtentDescriptor *extd;
-		
+
 		extd = &cp->c_datafork->ff_data.cf_extents[0];
 		if (extd->startBlock == HFSTOVCB(hfsmp)->vcbJinfoBlock || extd->startBlock == hfsmp->jnl_start) {
 			printf("attrlist EPERM: %d\n", EPERM);
@@ -399,8 +363,7 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 	 *     information is stored)
 	 */
 	if ((alist->commonattr & (ATTR_OWNERSHIP_SETMASK & ~ATTR_CMN_FLAGS)) ||
-	    ((alist->commonattr & ATTR_CMN_FLAGS) &&
-	     (VTOVCB(vp)->vcbSigWord != kHFSSigWord))) {
+	    ((alist->commonattr & ATTR_CMN_FLAGS) && (VTOVCB(vp)->vcbSigWord != kHFSSigWord))) {
 		/*
 		 * NOTE: The following isn't ENTIRELY complete: even if
 		 * you're the superuser you cannot change the flags as
@@ -410,18 +373,16 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 		 * change so this check is sufficient for now.
 		 */
 		if ((error = hfs_owner_rights(hfsmp, cp->c_uid, cred, true)) != 0)
-        		return (error);
+			return (error);
 	}
 	/*
 	 * For any other attributes, check to see if the user has
 	 * write access to the cnode in question [unlike VOP_ACCESS,
 	 * ignore IMMUTABLE here]:
-	 */ 
-	if (((alist->commonattr & ~ATTR_OWNERSHIP_SETMASK) != 0) ||
-	    (alist->volattr != 0) || (alist->dirattr != 0) ||
-	    (alist->fileattr != 0)) {
+	 */
+	if (((alist->commonattr & ~ATTR_OWNERSHIP_SETMASK) != 0) || (alist->volattr != 0) || (alist->dirattr != 0) || (alist->fileattr != 0)) {
 		if ((error = hfs_write_access(vp, cred, p, false)) != 0)
-        		return (error);
+			return (error);
 	}
 
 	/*
@@ -456,9 +417,9 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 	if ((saved_uid != cp->c_uid) || (saved_gid != cp->c_gid)) {
 		uid_t uid;
 		gid_t gid;
-		
+
 		uid = cp->c_uid;
- 		cp->c_uid = saved_uid;
+		cp->c_uid = saved_uid;
 		gid = cp->c_gid;
 		cp->c_gid = saved_gid;
 		if ((error = hfs_chown(vp, uid, gid, cred, p)))
@@ -474,7 +435,7 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 			goto ErrorExit;
 	}
 	/* If unpacking changed the flags then call hfs_chflags() */
-	if (saved_flags !=cp->c_xflags) {
+	if (saved_flags != cp->c_xflags) {
 		u_long flags;
 
 		flags = cp->c_xflags;
@@ -495,13 +456,13 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 		struct timeval tv;
 		TIMESPEC_TO_TIMEVAL(&tv, &ts);
 		CTIMES(cp, &tv, &tv);
-		if ((error = VOP_UPDATE(vp, &tv, &tv, 1)))
+		if ((error = hfs_update(vp, &tv, &tv, 1)))
 			goto ErrorExit;
 	}
 	/* Volume Rename */
 	if (alist->volattr & ATTR_VOL_NAME) {
 		ExtendedVCB *vcb = VTOVCB(vp);
-	
+
 		if (vcb->vcbVN[0] == 0) {
 			/*
 			 * Ignore attempts to rename a volume to a zero-length name:
@@ -509,8 +470,8 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 			 */
 			copystr(cp->c_desc.cd_nameptr, vcb->vcbVN, sizeof(vcb->vcbVN), NULL);
 		} else {
-			struct cat_desc to_desc = {0};
-			struct cat_desc todir_desc = {0};
+			struct cat_desc to_desc = { 0 };
+			struct cat_desc todir_desc = { 0 };
 			// struct cat_desc new_desc = {0};
 
 			todir_desc.cd_parentcnid = kRootParID;
@@ -524,25 +485,24 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 			to_desc.cd_flags = CD_ISDIR;
 
 			// XXXdbg
-		#ifdef DARWING_JOURNAL
+#ifdef DARWING_JOURNAL
 			HFS_GLOCK_ACQUIRE(hfsmp);
 			if (hfsmp->jnl) {
-			    if (journal_start_transaction(hfsmp->jnl) != 0) {
+				if (journal_start_transaction(hfsmp->jnl) != 0) {
 					HFS_GLOCK_RELEASE(hfsmp);
 					error = EINVAL;
 					/* Restore the old name in the VCB */
 					copystr(cp->c_desc.cd_nameptr, vcb->vcbVN, sizeof(vcb->vcbVN), NULL);
 					vcb->vcbFlags |= 0xFF00;
 					goto ErrorExit;
-			    }
+				}
 			}
 
-
 			/* Lock catalog b-tree */
-			error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_EXCLUSIVE, curthread);//  p);
+			error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_EXCLUSIVE, curthread); //  p);
 			if (error) {
 				if (hfsmp->jnl) {
-				    journal_end_transaction(hfsmp->jnl);
+					journal_end_transaction(hfsmp->jnl);
 				}
 				HFS_GLOCK_RELEASE(hfsmp);
 
@@ -551,17 +511,17 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 				vcb->vcbFlags |= 0xFF00;
 				goto ErrorExit;
 			}
-		
+
 			error = cat_rename(hfsmp, &cp->c_desc, &todir_desc, &to_desc, &new_desc);
 
 			/* Unlock the Catalog */
-			(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread);//  p);
-			
+			(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); //  p);
+
 			if (hfsmp->jnl) {
-			    journal_end_transaction(hfsmp->jnl);
+				journal_end_transaction(hfsmp->jnl);
 			}
 			HFS_GLOCK_RELEASE(hfsmp);
-			
+
 			if (error) {
 				/* Restore the old name in the VCB */
 				copystr(cp->c_desc.cd_nameptr, vcb->vcbVN, sizeof(vcb->vcbVN), NULL);
@@ -571,17 +531,17 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 			/* Release old allocated name buffer */
 			if (cp->c_desc.cd_flags & CD_HASBUF) {
 				char *name = cp->c_desc.cd_nameptr;
-		
+
 				cp->c_desc.cd_nameptr = 0;
 				cp->c_desc.cd_namelen = 0;
 				cp->c_desc.cd_flags &= ~CD_HASBUF;
 				free(name, M_TEMP);
-			}			
+			}
 			/* Update cnode's catalog descriptor */
 			replace_desc(cp, &new_desc);
 			vcb->volumeNameEncodingHint = new_desc.cd_encoding;
 			cp->c_flag |= C_CHANGE;
-		#endif
+#endif
 		}
 	}
 
@@ -589,36 +549,33 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 	 * When the volume name changes or the volume's finder info
 	 * changes then force them to disk immediately.
 	 */
-	if ((alist->volattr & ATTR_VOL_INFO) &&
-	    ((alist->volattr & ATTR_VOL_NAME) ||
-	     (alist->commonattr & ATTR_CMN_FNDRINFO))) {
-		(void) hfs_flushvolumeheader(hfsmp, MNT_WAIT, 0);
+	if ((alist->volattr & ATTR_VOL_INFO) && ((alist->volattr & ATTR_VOL_NAME) || (alist->commonattr & ATTR_CMN_FNDRINFO))) {
+		(void)hfs_flushvolumeheader(hfsmp, MNT_WAIT, 0);
 	}
 ErrorExit:
 	if (attrbufptr)
-		FREE(attrbufptr, M_TEMP);
+		free(attrbufptr, M_TEMP);
 
 	return (error);
 }
 
-
 /*
  * readdirattr operation will return attributes for the items in the
- * directory specified. 
+ * directory specified.
  *
  * It does not do . and .. entries. The problem is if you are at the root of the
  * hfs directory and go to .. you could be crossing a mountpoint into a
- * different (ufs) file system. The attributes that apply for it may not 
- * apply for the file system you are doing the readdirattr on. To make life 
+ * different (ufs) file system. The attributes that apply for it may not
+ * apply for the file system you are doing the readdirattr on. To make life
  * simpler, this call will only return entries in its directory, hfs like.
- * TO DO LATER: 
+ * TO DO LATER:
  * 1. more than one for uiovcnt support.
  * 2. put knohint (hints) in state for next call in
  * 3. credentials checking when rest of hfs does it.
  * 4. Do return permissions concatenation ???
  */
 
-/* 			
+/*
 #
 #% readdirattr	vp	L L L
 #
@@ -637,17 +594,16 @@ struct vop_readdirattr_args {
 	struct ucred *a_cred;
 };
 
-__private_extern__
 static int
 hfs_readdirattr(struct vop_readdirattr_args *ap)
 {
 	struct vnode *dvp = ap->a_vp;
 	struct cnode *dcp = VTOC(dvp);
-	struct hfsmount * hfsmp = VTOHFS(dvp);
+	struct hfsmount *hfsmp = VTOHFS(dvp);
 	struct attrlist *alist = ap->a_alist;
 	struct uio *uio = ap->a_uio;
 	int maxcount = ap->a_maxcount;
-	// struct proc *p = current_proc();
+	// struct proc *p = curthread;
 	u_long fixedblocksize;
 	u_long maxattrblocksize;
 	u_long currattrbufsize;
@@ -658,10 +614,10 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 	int error = 0;
 	int depleted = 0;
 	int index, startindex;
-	int i, dir_entries =0 ;
+	int i, dir_entries = 0;
 	struct cat_desc *lastdescp = NULL;
 	struct cat_desc prevdesc;
-	char * prevnamebuf = NULL;
+	char *prevnamebuf = NULL;
 	struct cat_entrylist *ce_list = NULL;
 #ifdef DARWIN_JOURNAL
 	dir_entries = dcp->c_entries;
@@ -671,30 +627,24 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 #endif
 	*(ap->a_actualcount) = 0;
 	*(ap->a_eofflag) = 0;
-	
+
 	if (ap->a_cookies != NULL) {
 		printf("readdirattr: no cookies!\n");
 		return (EINVAL);
 	}
 
 	/* Check for invalid options and buffer space. */
-	if (((ap->a_options & ~(FSOPT_NOINMEMUPDATE | FSOPT_NOFOLLOW)) != 0)
-	||  (uio->uio_resid <= 0) || (uio->uio_iovcnt > 1) || (maxcount <= 0))
+	if (((ap->a_options & ~(FSOPT_NOINMEMUPDATE | FSOPT_NOFOLLOW)) != 0) || (uio->uio_resid <= 0) || (uio->uio_iovcnt > 1) || (maxcount <= 0))
 		return (EINVAL);
 
 	/* This call doesn't take volume attributes. */
-	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT) ||
-	    ((alist->commonattr & ~ATTR_CMN_VALIDMASK) != 0) ||
-	    (alist->volattr  != 0) ||
-	    ((alist->dirattr & ~ATTR_DIR_VALIDMASK) != 0) ||
-	    ((alist->fileattr & ~ATTR_FILE_VALIDMASK) != 0)) 
+	if ((alist->bitmapcount != ATTR_BIT_MAP_COUNT) || ((alist->commonattr & ~ATTR_CMN_VALIDMASK) != 0) || (alist->volattr != 0) ||
+	    ((alist->dirattr & ~ATTR_DIR_VALIDMASK) != 0) || ((alist->fileattr & ~ATTR_FILE_VALIDMASK) != 0))
 		return (EINVAL);
 
 	/* Reject requests for unsupported options. */
-	if ((alist->commonattr & (ATTR_CMN_NAMEDATTRCOUNT | ATTR_CMN_NAMEDATTRLIST |
-	     ATTR_CMN_OBJPERMANENTID)) ||
-	    (alist->fileattr & (ATTR_FILE_FILETYPE | ATTR_FILE_FORKCOUNT |
-	     ATTR_FILE_FORKLIST | ATTR_FILE_DATAEXTENTS | ATTR_FILE_RSRCEXTENTS))) {
+	if ((alist->commonattr & (ATTR_CMN_NAMEDATTRCOUNT | ATTR_CMN_NAMEDATTRLIST | ATTR_CMN_OBJPERMANENTID)) ||
+	    (alist->fileattr & (ATTR_FILE_FILETYPE | ATTR_FILE_FORKCOUNT | ATTR_FILE_FORKLIST | ATTR_FILE_DATAEXTENTS | ATTR_FILE_RSRCEXTENTS))) {
 		printf("readdirattr: unsupported attributes! (%s)\n", dcp->c_desc.cd_nameptr);
 		return (EINVAL);
 	}
@@ -710,11 +660,11 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 	/* Get a buffer to hold packed attributes. */
 	fixedblocksize = (sizeof(u_long) + hfs_attrblksize(alist)); /* u_long for length */
 	maxattrblocksize = fixedblocksize;
-	if (alist->commonattr & ATTR_CMN_NAME) 
+	if (alist->commonattr & ATTR_CMN_NAME)
 		maxattrblocksize += kHFSPlusMaxFileNameBytes + 1;
 	MALLOC5(attrbufptr, void *, maxattrblocksize, M_TEMP, M_WAITOK);
 	attrptr = attrbufptr;
-	varptr = (char *)attrbufptr + fixedblocksize;  /* Point to variable-length storage */
+	varptr = (char *)attrbufptr + fixedblocksize; /* Point to variable-length storage */
 
 	/* Initialize a catalog entry list. */
 	MALLOC5(ce_list, struct cat_entrylist *, sizeof(*ce_list), M_TEMP, M_WAITOK);
@@ -728,7 +678,7 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 	prevdesc.cd_parentcnid = dcp->c_cnid;
 	prevdesc.cd_nameptr = hfs_getnamehint(dcp, index);
 	prevdesc.cd_namelen = prevdesc.cd_nameptr ? strlen(prevdesc.cd_nameptr) : 0;
-	
+
 	/*
 	 * Obtain a list of catalog entries and pack their attributes until
 	 * the output buffer is full or maxcount entries have been packed.
@@ -744,16 +694,16 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 		lastdescp = NULL;
 
 		/* Lock catalog b-tree. */
-		error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, curthread);// p);
+		error = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, curthread); // p);
 		if (error)
 			goto exit;
-		 
+
 		error = cat_getentriesattr(hfsmp, &prevdesc, index, ce_list);
 		/* Don't forget to release the descriptors later! */
 
 		/* Unlock catalog b-tree. */
- 		(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); // p);
- 
+		(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, curthread); // p);
+
 		if (error == ENOENT) {
 			*(ap->a_eofflag) = TRUE;
 			error = 0;
@@ -761,22 +711,22 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 		}
 		if (error)
 			break;
- 
+
 		/* Process the catalog entries. */
 		for (i = 0; i < ce_list->realentries; ++i) {
 			struct cnode *cp = NULL;
 			struct vnode *vp = NULL;
 			struct vnode *rvp = NULL;
-			struct cat_desc * cdescp;
-			struct cat_attr * cattrp;
-			struct cat_fork c_datafork = {0};
-			struct cat_fork c_rsrcfork = {0};
+			struct cat_desc *cdescp;
+			struct cat_attr *cattrp;
+			struct cat_fork c_datafork = { 0 };
+			struct cat_fork c_rsrcfork = { 0 };
 
 			cdescp = &ce_list->entry[i].ce_desc;
 			cattrp = &ce_list->entry[i].ce_attr;
-			c_datafork.cf_size   = ce_list->entry[i].ce_datasize;
+			c_datafork.cf_size = ce_list->entry[i].ce_datasize;
 			c_datafork.cf_blocks = ce_list->entry[i].ce_datablks;
-			c_rsrcfork.cf_size   = ce_list->entry[i].ce_rsrcsize;
+			c_rsrcfork.cf_size = ce_list->entry[i].ce_rsrcsize;
 			c_rsrcfork.cf_blocks = ce_list->entry[i].ce_rsrcblks;
 			/*
 			 * Get in memory cnode data (if any).
@@ -789,13 +739,13 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 						cdescp = &cp->c_desc;
 					cattrp = &cp->c_attr;
 					if (cp->c_datafork) {
-						c_datafork.cf_size   = cp->c_datafork->ff_data.cf_size;
-						c_datafork.cf_clump  = cp->c_datafork->ff_data.cf_clump;
+						c_datafork.cf_size = cp->c_datafork->ff_data.cf_size;
+						c_datafork.cf_clump = cp->c_datafork->ff_data.cf_clump;
 						c_datafork.cf_blocks = cp->c_datafork->ff_data.cf_blocks;
 					}
 					if (cp->c_rsrcfork) {
-						c_rsrcfork.cf_size   = cp->c_rsrcfork->ff_data.cf_size;
-						c_rsrcfork.cf_clump  = cp->c_rsrcfork->ff_data.cf_clump;
+						c_rsrcfork.cf_size = cp->c_rsrcfork->ff_data.cf_size;
+						c_rsrcfork.cf_clump = cp->c_rsrcfork->ff_data.cf_clump;
 						c_rsrcfork.cf_blocks = cp->c_rsrcfork->ff_data.cf_blocks;
 					}
 				}
@@ -808,10 +758,9 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 			attrblk.ab_blocksize = maxattrblocksize;
 
 			/* Pack catalog entries into attribute buffer. */
-			hfs_packattrblk(&attrblk, hfsmp, vp, cdescp, cattrp,
-					&c_datafork, &c_rsrcfork);
+			hfs_packattrblk(&attrblk, hfsmp, vp, cdescp, cattrp, &c_datafork, &c_rsrcfork);
 			currattrbufsize = ((char *)varptr - (char *)attrbufptr);
-		
+
 			/* All done with cnode. */
 			if (vp) {
 				vput(vp);
@@ -834,16 +783,14 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 					break;
 				}
 				attrptr = attrbufptr;
-				varptr = (char *)attrbufptr + fixedblocksize;  /* Point to variable-length storage */
+				varptr = (char *)attrbufptr + fixedblocksize; /* Point to variable-length storage */
 				/* Save the last valid catalog entry */
 				lastdescp = &ce_list->entry[i].ce_desc;
 				index++;
 				*ap->a_actualcount += 1;
 
 				/* Termination checks */
-				if ((--maxcount <= 0) ||
-				    (uio->uio_resid < (fixedblocksize + HFS_AVERAGE_NAME_SIZE)) ||
-				    (index >= dir_entries)) {
+				if ((--maxcount <= 0) || (uio->uio_resid < (fixedblocksize + HFS_AVERAGE_NAME_SIZE)) || (index >= dir_entries)) {
 					depleted = 1;
 					break;
 				}
@@ -851,9 +798,7 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 		} /* for each catalog entry */
 
 		/* If there are more entries then save the last name. */
-		if (index < dir_entries
-		&&  !(*(ap->a_eofflag))
-		&&  lastdescp != NULL) {
+		if (index < dir_entries && !(*(ap->a_eofflag)) && lastdescp != NULL) {
 			if (prevnamebuf == NULL)
 				MALLOC5(prevnamebuf, char *, kHFSPlusMaxFileNameBytes + 1, M_TEMP, M_WAITOK);
 			bcopy(lastdescp->cd_nameptr, prevnamebuf, lastdescp->cd_namelen + 1);
@@ -863,7 +808,7 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 				prevdesc.cd_namelen = lastdescp->cd_namelen + 1;
 			}
 		}
-			
+
 		/* All done with the catalog descriptors. */
 		for (i = 0; i < ce_list->realentries; ++i)
 			cat_releasedesc(&ce_list->entry[i].ce_desc);
@@ -872,7 +817,7 @@ hfs_readdirattr(struct vop_readdirattr_args *ap)
 	} /* while not depleted */
 
 	*ap->a_newstate = dcp->c_mtime;
-	
+
 	/* All done with last name hint */
 	hfs_relnamehint(dcp, startindex);
 	startindex = 0;
@@ -888,30 +833,24 @@ exit:
 		hfs_relnamehint(dcp, startindex);
 
 	if (attrbufptr)
-		FREE(attrbufptr, M_TEMP);
+		free(attrbufptr, M_TEMP);
 	if (ce_list)
-		FREE(ce_list, M_TEMP);
+		free(ce_list, M_TEMP);
 	if (prevnamebuf)
-		FREE(prevnamebuf, M_TEMP);
-		
+		free(prevnamebuf, M_TEMP);
+
 	return (error);
 }
-
 
 /*==================== Attribute list support routines ====================*/
 
 /*
  * Pack cnode attributes into an attribute block.
  */
- __private_extern__
+
 void
-hfs_packattrblk(struct attrblock *abp,
-		struct hfsmount *hfsmp,
-		struct vnode *vp,
-		struct cat_desc *descp,
-		struct cat_attr *attrp,
-		struct cat_fork *datafork,
-		struct cat_fork *rsrcfork)
+hfs_packattrblk(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp, struct cat_desc *descp, struct cat_attr *attrp, struct cat_fork *datafork,
+    struct cat_fork *rsrcfork)
 {
 	struct attrlist *attrlistp = abp->ab_attrlist;
 
@@ -924,70 +863,62 @@ hfs_packattrblk(struct attrblock *abp,
 	} else {
 		if (attrlistp->commonattr)
 			packcommonattr(abp, hfsmp, vp, descp, attrp);
-	
+
 		if (attrlistp->dirattr && S_ISDIR(attrp->ca_mode))
-			packdirattr(abp, hfsmp, vp, descp,attrp);
-	
+			packdirattr(abp, hfsmp, vp, descp, attrp);
+
 		if (attrlistp->fileattr && !S_ISDIR(attrp->ca_mode))
 			packfileattr(abp, hfsmp, attrp, datafork, rsrcfork);
 	}
 }
 
-
-static char*
+static char *
 mountpointname(struct mount *mp)
 {
 	size_t namelength = strlen(mp->mnt_stat.f_mntonname);
 	int foundchars = 0;
 	char *c;
-	
+
 	if (namelength == 0)
 		return (NULL);
-	
+
 	/*
 	 * Look backwards through the name string, looking for
 	 * the first slash encountered (which must precede the
 	 * last part of the pathname).
 	 */
-	for (c = mp->mnt_stat.f_mntonname + namelength - 1;
-	     namelength > 0; --c, --namelength) {
+	for (c = mp->mnt_stat.f_mntonname + namelength - 1; namelength > 0; --c, --namelength) {
 		if (*c != '/') {
 			foundchars = 1;
 		} else if (foundchars) {
 			return (c + 1);
 		}
 	}
-	
+
 	return (mp->mnt_stat.f_mntonname);
 }
 
-
 static void
-packnameattr(
-	struct attrblock *abp,
-	struct vnode *vp,
-	char *name,
-	int namelen)
+packnameattr(struct attrblock *abp, struct vnode *vp, char *name, int namelen)
 {
 	void *varbufptr;
-	struct attrreference * attr_refptr;
+	struct attrreference *attr_refptr;
 	char *mpname;
 	size_t mpnamelen;
 	u_long attrlength;
 	char empty = 0;
-	
+
 	/* A cnode's name may be incorrect for the root of a mounted
 	 * filesystem (it can be mounted on a different directory name
 	 * than the name of the volume, such as "blah-1").  So for the
 	 * root directory, it's best to return the last element of the
 	 location where the volume's mounted:
 	 */
-	if ((vp != NULL) && (vp->v_vflag & VV_ROOT) &&
-	    (mpname = mountpointname(vp->v_mount))) {
+	if ((vp != NULL) && (vp->v_vflag & VV_ROOT) && (mpname = mountpointname(vp->v_mount))) {
 		mpnamelen = strlen(mpname);
-		
+
 		/* Trim off any trailing slashes: */
-		while ((mpnamelen > 0) && (mpname[mpnamelen-1] == '/'))
+		while ((mpnamelen > 0) && (mpname[mpnamelen - 1] == '/'))
 			--mpnamelen;
 
 		/* If there's anything left, use it instead of the volume's name */
@@ -1007,14 +938,14 @@ packnameattr(
 	attrlength = namelen + 1;
 	attr_refptr->attr_dataoffset = (char *)varbufptr - (char *)attr_refptr;
 	attr_refptr->attr_length = attrlength;
-	(void) strncpy((unsigned char *)varbufptr, name, attrlength);
+	(void)strncpy((unsigned char *)varbufptr, name, attrlength);
 	/*
 	 * Advance beyond the space just allocated and
 	 * round up to the next 4-byte boundary:
 	 */
 	// (char *)(varbufptr) += attrlength + ((4 - (attrlength & 3)) & 3);
 	// ++attr_refptr;
-	
+
 	MOVE_PTR(varbufptr, char, attrlength + ((4 - (attrlength & 3)) & 3));
 	++attr_refptr;
 
@@ -1060,7 +991,7 @@ packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *v
 	}
 	if (ATTR_CMN_OBJTAG & attr) {
 		// *((fsobj_tag_t *)attrbufptr)++ = VT_HFS;
-		
+
 		// MOVE_PTR(attrbufptr, fsobj_id_t, 1);
 		// *attrbufptr = 0; //TODO: VT_HFS ?
 		fsobj_id_t vt_hfs = { 999, 999 };
@@ -1084,14 +1015,14 @@ packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *v
 		// ++((fsobj_id_t *)attrbufptr);
 		MOVE_PTR(attrbufptr, fsobj_id_t, 1);
 	}
-        if (ATTR_CMN_SCRIPT & attr) {
-        	u_long encoding;
- 
-        	if (vcb->vcbSigWord == kHFSPlusSigWord)
-        		encoding = vcb->volumeNameEncodingHint;
-        	else
-        		encoding = hfsmp->hfs_encoding;
-        	// *((text_encoding_t *)attrbufptr)++ = encoding;
+	if (ATTR_CMN_SCRIPT & attr) {
+		u_long encoding;
+
+		if (vcb->vcbSigWord == kHFSPlusSigWord)
+			encoding = vcb->volumeNameEncodingHint;
+		else
+			encoding = hfsmp->hfs_encoding;
+		// *((text_encoding_t *)attrbufptr)++ = encoding;
 		MOVE_PTR_SET(attrbufptr, text_encoding_t, 1, encoding);
 	}
 	if (ATTR_CMN_CRTIME & attr) {
@@ -1125,7 +1056,7 @@ packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *v
 		MOVE_PTR(attrbufptr, struct timespec, 1);
 	}
 	if (ATTR_CMN_FNDRINFO & attr) {
-		bcopy (&vcb->vcbFndrInfo, attrbufptr, sizeof(vcb->vcbFndrInfo));
+		bcopy(&vcb->vcbFndrInfo, attrbufptr, sizeof(vcb->vcbFndrInfo));
 		// (char *)attrbufptr += sizeof(vcb->vcbFndrInfo);
 		MOVE_PTR(attrbufptr, char, sizeof(vcb->vcbFndrInfo));
 	}
@@ -1178,14 +1109,13 @@ packvolcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *v
 	if (ATTR_CMN_USERACCESS & attr) {
 		//*((u_long *)attrbufptr)++ =
 		//	DerivePermissionSummary(cp->c_uid, cp->c_gid, cp->c_mode,
-		//		VTOVFS(vp), current_proc()->p_ucred, current_proc());
-		MOVE_PTR_SET(attrbufptr, u_long, 1, DerivePermissionSummary(cp->c_uid, cp->c_gid, cp->c_mode,VTOVFS(vp), current_proc()->td_ucred));
+		//		VTOVFS(vp), curthread->p_ucred, curthread);
+		MOVE_PTR_SET(attrbufptr, u_long, 1, DerivePermissionSummary(cp->c_uid, cp->c_gid, cp->c_mode, VTOVFS(vp), curthread->td_ucred));
 	}
 
 	*abp->ab_attrbufpp = attrbufptr;
 	*abp->ab_varbufpp = varbufptr;
 }
-
 
 static void
 packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
@@ -1216,7 +1146,7 @@ packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
 	if (ATTR_VOL_SPACEFREE & attr) {
 		// *((off_t *)attrbufptr)++ = (off_t)hfs_freeblks(hfsmp, 0) *
 		//                           (off_t)vcb->blockSize;
-		MOVE_PTR_SET(attrbufptr, off_t, 1, hfs_freeblks(hfsmp, 0) * vcb->blockSize);	
+		MOVE_PTR_SET(attrbufptr, off_t, 1, hfs_freeblks(hfsmp, 0) * vcb->blockSize);
 	}
 	if (ATTR_VOL_SPACEAVAIL & attr) {
 		//*((off_t *)attrbufptr)++ = (off_t)hfs_freeblks(hfsmp, 1) *
@@ -1231,7 +1161,7 @@ packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
 		MOVE_PTR_SET(attrbufptr, off_t, 1, (off_t)(vcb->vcbClpSiz));
 	}
 	if (ATTR_VOL_IOBLOCKSIZE & attr) {
-		MOVE_PTR_SET(attrbufptr, u_long, 1, (u_long) hfsmp->hfs_logBlockSize);
+		MOVE_PTR_SET(attrbufptr, u_long, 1, (u_long)hfsmp->hfs_logBlockSize);
 	}
 	if (ATTR_VOL_OBJCOUNT & attr) {
 		MOVE_PTR_SET(attrbufptr, u_long, 1, (u_long)vcb->vcbFilCnt + (u_long)vcb->vcbDirCnt);
@@ -1246,15 +1176,13 @@ packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
 		MOVE_PTR_SET(attrbufptr, u_long, 1, 0xFFFFFFFF);
 	}
 	if (ATTR_VOL_MOUNTPOINT & attr) {
-		((struct attrreference *)attrbufptr)->attr_dataoffset =
-				(char *)varbufptr - (char *)attrbufptr;
-		((struct attrreference *)attrbufptr)->attr_length =
-				strlen(mp->mnt_stat.f_mntonname) + 1;
+		((struct attrreference *)attrbufptr)->attr_dataoffset = (char *)varbufptr - (char *)attrbufptr;
+		((struct attrreference *)attrbufptr)->attr_length = strlen(mp->mnt_stat.f_mntonname) + 1;
 		attrlength = ((struct attrreference *)attrbufptr)->attr_length;
 		/* round up to the next 4-byte boundary: */
 		attrlength = attrlength + ((4 - (attrlength & 3)) & 3);
-		(void) bcopy(mp->mnt_stat.f_mntonname, varbufptr, attrlength);
-			
+		(void)bcopy(mp->mnt_stat.f_mntonname, varbufptr, attrlength);
+
 		/* Advance beyond the space just allocated: */
 		// (char *)varbufptr += attrlength;
 		MOVE_PTR(varbufptr, char, attrlength);
@@ -1262,10 +1190,8 @@ packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
 		MOVE_PTR(attrbufptr, struct attrreference, 1);
 	}
 	if (ATTR_VOL_NAME & attr) {
-		((struct attrreference *)attrbufptr)->attr_dataoffset =
-				(char *)varbufptr - (char *)attrbufptr;
-		((struct attrreference *)attrbufptr)->attr_length =
-				cp->c_desc.cd_namelen + 1;
+		((struct attrreference *)attrbufptr)->attr_dataoffset = (char *)varbufptr - (char *)attrbufptr;
+		((struct attrreference *)attrbufptr)->attr_length = cp->c_desc.cd_namelen + 1;
 		attrlength = ((struct attrreference *)attrbufptr)->attr_length;
 		/* round up to the next 4-byte boundary: */
 		attrlength = attrlength + ((4 - (attrlength & 3)) & 3);
@@ -1278,26 +1204,24 @@ packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
 		// ++((struct attrreference *)attrbufptr);
 		MOVE_PTR(attrbufptr, struct attrreference, 1);
 	}
-        if (ATTR_VOL_MOUNTFLAGS & attr) {
-        	// *((u_long *)attrbufptr)++ = (u_long)mp->mnt_flag;
+	if (ATTR_VOL_MOUNTFLAGS & attr) {
+		// *((u_long *)attrbufptr)++ = (u_long)mp->mnt_flag;
 		MOVE_PTR_SET(attrbufptr, u_long, 1, (u_long)mp->mnt_flag);
 	}
 	if (ATTR_VOL_MOUNTEDDEVICE & attr) {
-		((struct attrreference *)attrbufptr)->attr_dataoffset =
-				(char *)varbufptr - (char *)attrbufptr;
-		((struct attrreference *)attrbufptr)->attr_length =
-				strlen(mp->mnt_stat.f_mntfromname) + 1;
+		((struct attrreference *)attrbufptr)->attr_dataoffset = (char *)varbufptr - (char *)attrbufptr;
+		((struct attrreference *)attrbufptr)->attr_length = strlen(mp->mnt_stat.f_mntfromname) + 1;
 		attrlength = ((struct attrreference *)attrbufptr)->attr_length;
 		/* round up to the next 4-byte boundary: */
 		attrlength = attrlength + ((4 - (attrlength & 3)) & 3);
-		(void) bcopy(mp->mnt_stat.f_mntfromname, varbufptr, attrlength);
-			
+		(void)bcopy(mp->mnt_stat.f_mntfromname, varbufptr, attrlength);
+
 		/* Advance beyond the space just allocated: */
 		// (char *)varbufptr += attrlength;
 		MOVE_PTR(varbufptr, char, attrlength);
 		//++((struct attrreference *)attrbufptr);
 		MOVE_PTR(attrbufptr, struct attrreference, 1);
-        }
+	}
 	if (ATTR_VOL_ENCODINGSUSED & attr) {
 		//*((unsigned long long *)attrbufptr)++ =
 		//		(unsigned long long)vcb->encodingsBitmap;
@@ -1305,79 +1229,60 @@ packvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp)
 	}
 	if (ATTR_VOL_CAPABILITIES & attr) {
 		vol_capabilities_attr_t *vcapattrptr;
-	
+
 		vcapattrptr = (vol_capabilities_attr_t *)attrbufptr;
 
 		if (vcb->vcbSigWord == kHFSPlusSigWord) {
-			vcapattrptr->capabilities[VOL_CAPABILITIES_FORMAT] =
-					VOL_CAP_FMT_PERSISTENTOBJECTIDS |
-					VOL_CAP_FMT_SYMBOLICLINKS |
-					VOL_CAP_FMT_HARDLINKS;
+			vcapattrptr->capabilities[VOL_CAPABILITIES_FORMAT] = VOL_CAP_FMT_PERSISTENTOBJECTIDS | VOL_CAP_FMT_SYMBOLICLINKS |
+			    VOL_CAP_FMT_HARDLINKS;
 		} else { /* Plain HFS */
-			vcapattrptr->capabilities[VOL_CAPABILITIES_FORMAT] =
-					VOL_CAP_FMT_PERSISTENTOBJECTIDS;
+			vcapattrptr->capabilities[VOL_CAPABILITIES_FORMAT] = VOL_CAP_FMT_PERSISTENTOBJECTIDS;
 		}
-        	vcapattrptr->capabilities[VOL_CAPABILITIES_INTERFACES] =
-        				VOL_CAP_INT_SEARCHFS |
-        				VOL_CAP_INT_ATTRLIST |
-        				VOL_CAP_INT_NFSEXPORT |
-        				VOL_CAP_INT_READDIRATTR ;
-        	vcapattrptr->capabilities[VOL_CAPABILITIES_RESERVED1] = 0;
-        	vcapattrptr->capabilities[VOL_CAPABILITIES_RESERVED2] = 0;
+		vcapattrptr->capabilities[VOL_CAPABILITIES_INTERFACES] = VOL_CAP_INT_SEARCHFS | VOL_CAP_INT_ATTRLIST | VOL_CAP_INT_NFSEXPORT |
+		    VOL_CAP_INT_READDIRATTR;
+		vcapattrptr->capabilities[VOL_CAPABILITIES_RESERVED1] = 0;
+		vcapattrptr->capabilities[VOL_CAPABILITIES_RESERVED2] = 0;
 
-		vcapattrptr->valid[VOL_CAPABILITIES_FORMAT] =
-					VOL_CAP_FMT_PERSISTENTOBJECTIDS |
-					VOL_CAP_FMT_SYMBOLICLINKS |
-					VOL_CAP_FMT_HARDLINKS;
-        	vcapattrptr->valid[VOL_CAPABILITIES_INTERFACES] =
-        				VOL_CAP_INT_SEARCHFS |
-        				VOL_CAP_INT_ATTRLIST |
-        				VOL_CAP_INT_NFSEXPORT |
-        				VOL_CAP_INT_READDIRATTR ;
-        	vcapattrptr->valid[VOL_CAPABILITIES_RESERVED1] = 0;
-        	vcapattrptr->valid[VOL_CAPABILITIES_RESERVED2] = 0;
+		vcapattrptr->valid[VOL_CAPABILITIES_FORMAT] = VOL_CAP_FMT_PERSISTENTOBJECTIDS | VOL_CAP_FMT_SYMBOLICLINKS | VOL_CAP_FMT_HARDLINKS;
+		vcapattrptr->valid[VOL_CAPABILITIES_INTERFACES] = VOL_CAP_INT_SEARCHFS | VOL_CAP_INT_ATTRLIST | VOL_CAP_INT_NFSEXPORT | VOL_CAP_INT_READDIRATTR;
+		vcapattrptr->valid[VOL_CAPABILITIES_RESERVED1] = 0;
+		vcapattrptr->valid[VOL_CAPABILITIES_RESERVED2] = 0;
 
 		// ++((vol_capabilities_attr_t *)attrbufptr);
 		MOVE_PTR(attrbufptr, vol_capabilities_attr_t, 1);
 	}
 	if (ATTR_VOL_ATTRIBUTES & attr) {
 		vol_attributes_attr_t *volattrattrp;
-		
-		volattrattrp = (vol_attributes_attr_t *)attrbufptr;
-        	volattrattrp->validattr.commonattr = ATTR_CMN_VALIDMASK;
-        	volattrattrp->validattr.volattr = ATTR_VOL_VALIDMASK;
-        	volattrattrp->validattr.dirattr = ATTR_DIR_VALIDMASK;
-        	volattrattrp->validattr.fileattr = ATTR_FILE_VALIDMASK;
-        	volattrattrp->validattr.forkattr = ATTR_FORK_VALIDMASK;
 
-        	volattrattrp->nativeattr.commonattr = ATTR_CMN_VALIDMASK;
-        	volattrattrp->nativeattr.volattr = ATTR_VOL_VALIDMASK;
-        	volattrattrp->nativeattr.dirattr = ATTR_DIR_VALIDMASK;
-        	volattrattrp->nativeattr.fileattr = ATTR_FILE_VALIDMASK;
-        	volattrattrp->nativeattr.forkattr = ATTR_FORK_VALIDMASK;
+		volattrattrp = (vol_attributes_attr_t *)attrbufptr;
+		volattrattrp->validattr.commonattr = ATTR_CMN_VALIDMASK;
+		volattrattrp->validattr.volattr = ATTR_VOL_VALIDMASK;
+		volattrattrp->validattr.dirattr = ATTR_DIR_VALIDMASK;
+		volattrattrp->validattr.fileattr = ATTR_FILE_VALIDMASK;
+		volattrattrp->validattr.forkattr = ATTR_FORK_VALIDMASK;
+
+		volattrattrp->nativeattr.commonattr = ATTR_CMN_VALIDMASK;
+		volattrattrp->nativeattr.volattr = ATTR_VOL_VALIDMASK;
+		volattrattrp->nativeattr.dirattr = ATTR_DIR_VALIDMASK;
+		volattrattrp->nativeattr.fileattr = ATTR_FILE_VALIDMASK;
+		volattrattrp->nativeattr.forkattr = ATTR_FORK_VALIDMASK;
 		// ++((vol_attributes_attr_t *)attrbufptr);
 		MOVE_PTR(attrbufptr, vol_attributes_attr_t, 1);
 	}
-	
+
 	*abp->ab_attrbufpp = attrbufptr;
 	*abp->ab_varbufpp = varbufptr;
 }
 
-
 static void
-packcommonattr(
-	struct attrblock *abp,
-	struct hfsmount *hfsmp,
-	struct vnode *vp,
-	struct cat_desc * cdp,
-	struct cat_attr * cap)
+packcommonattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp, struct cat_desc *cdp, struct cat_attr *cap)
 {
 	attrgroup_t attr = abp->ab_attrlist->commonattr;
 	struct mount *mp = HFSTOVFS(hfsmp);
 	void *attrbufptr = *abp->ab_attrbufpp;
 	void *varbufptr = *abp->ab_varbufpp;
 	u_long attrlength = 0;
-	
+
 	if (ATTR_CMN_NAME & attr) {
 		packnameattr(abp, vp, cdp->cd_nameptr, cdp->cd_namelen);
 		attrbufptr = *abp->ab_attrbufpp;
@@ -1412,7 +1317,7 @@ packcommonattr(
 	 * and Carbon APIs, which are hardlink-ignorant, will always
 	 * receive the c_cnid (from getattrlist).
 	 */
-        if (ATTR_CMN_OBJID & attr) {
+	if (ATTR_CMN_OBJID & attr) {
 		((fsobj_id_t *)attrbufptr)->fid_objno = cdp->cd_cnid;
 		((fsobj_id_t *)attrbufptr)->fid_generation = 0;
 		// ++((fsobj_id_t *)attrbufptr);
@@ -1432,7 +1337,7 @@ packcommonattr(
 	}
 	if (ATTR_CMN_SCRIPT & attr) {
 		// *((text_encoding_t *)attrbufptr)++ = cdp->cd_encoding;
-		MOVE_PTR_SET(attrbufptr, text_encoding_t, 1, cdp->cd_encoding);	
+		MOVE_PTR_SET(attrbufptr, text_encoding_t, 1, cdp->cd_encoding);
 	}
 	if (ATTR_CMN_CRTIME & attr) {
 		((struct timespec *)attrbufptr)->tv_sec = cap->ca_itime;
@@ -1515,29 +1420,23 @@ packcommonattr(
 	if (ATTR_CMN_USERACCESS & attr) {
 		// *((u_long *)attrbufptr)++ =
 		//	DerivePermissionSummary(cap->ca_uid, cap->ca_gid,
-		//		cap->ca_mode, mp, current_proc()->p_ucred,
-		//		current_proc());
-		MOVE_PTR_SET(attrbufptr, u_long, 1, DerivePermissionSummary(cap->ca_uid, cap->ca_gid,
-				cap->ca_mode, mp, current_proc()->td_ucred));
+		//		cap->ca_mode, mp, curthread->p_ucred,
+		//		curthread);
+		MOVE_PTR_SET(attrbufptr, u_long, 1, DerivePermissionSummary(cap->ca_uid, cap->ca_gid, cap->ca_mode, mp, curthread->td_ucred));
 	}
-	
+
 	*abp->ab_attrbufpp = attrbufptr;
 	*abp->ab_varbufpp = varbufptr;
 }
 
 static void
-packdirattr(
-	struct attrblock *abp,
-	struct hfsmount *hfsmp,
-	struct vnode *vp,
-	struct cat_desc * descp,
-	struct cat_attr * cattrp)
+packdirattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *vp, struct cat_desc *descp, struct cat_attr *cattrp)
 {
 	attrgroup_t attr = abp->ab_attrlist->dirattr;
 	void *attrbufptr = *abp->ab_attrbufpp;
-	
+
 	if (ATTR_DIR_LINKCOUNT & attr) {
-		// *((u_long *)attrbufptr)++ = 
+		// *((u_long *)attrbufptr)++ =
 		MOVE_PTR_SET(attrbufptr, u_long, 1, cattrp->ca_nlink);
 	}
 	if (ATTR_DIR_ENTRYCOUNT & attr) {
@@ -1545,15 +1444,15 @@ packdirattr(
 
 		if (descp->cd_parentcnid == kRootParID) {
 			if (hfsmp->hfs_private_metadata_dir != 0)
-				--entries;	    /* hide private dir */
-		#ifdef DARWIN_JOUNRAL
+				--entries; /* hide private dir */
+#ifdef DARWIN_JOUNRAL
 			if (hfsmp->jnl)
-				entries -= 2;	/* hide the journal files */
-		#endif
+				entries -= 2; /* hide the journal files */
+#endif
 		}
 
 		// *((u_long *)attrbufptr)++ = entries;
-		MOVE_PTR_SET(attrbufptr, u_long, 1, entries);	
+		MOVE_PTR_SET(attrbufptr, u_long, 1, entries);
 	}
 	if (ATTR_DIR_MOUNTSTATUS & attr) {
 		if (vp != NULL && vp->v_mountedhere != NULL) {
@@ -1568,12 +1467,7 @@ packdirattr(
 }
 
 static void
-packfileattr(
-	struct attrblock *abp,
-	struct hfsmount *hfsmp,
-	struct cat_attr *cattrp,
-	struct cat_fork *datafork,
-	struct cat_fork *rsrcfork)
+packfileattr(struct attrblock *abp, struct hfsmount *hfsmp, struct cat_attr *cattrp, struct cat_fork *datafork, struct cat_fork *rsrcfork)
 {
 	attrgroup_t attr = abp->ab_attrlist->fileattr;
 	void *attrbufptr = *abp->ab_attrbufpp;
@@ -1592,20 +1486,20 @@ packfileattr(
 	}
 	if (ATTR_FILE_ALLOCSIZE & attr) {
 		// *((off_t *)attrbufptr)++ =
-		MOVE_PTR_SET(attrbufptr, off_t, 1,(off_t)cattrp->ca_blocks * (off_t)allocblksize);
+		MOVE_PTR_SET(attrbufptr, off_t, 1, (off_t)cattrp->ca_blocks * (off_t)allocblksize);
 	}
 	if (ATTR_FILE_IOBLOCKSIZE & attr) {
-		// *((u_long *)attrbufptr)++ = 
+		// *((u_long *)attrbufptr)++ =
 		MOVE_PTR_SET(attrbufptr, u_long, 1, hfsmp->hfs_logBlockSize);
 	}
 	if (ATTR_FILE_CLUMPSIZE & attr) {
 		// *((u_long *)attrbufptr)++ =
-		MOVE_PTR_SET(attrbufptr, u_long, 1, datafork->cf_clump);  /* XXX ambiguity */
+		MOVE_PTR_SET(attrbufptr, u_long, 1, datafork->cf_clump); /* XXX ambiguity */
 	}
 	if (ATTR_FILE_DEVTYPE & attr) {
 		if (S_ISBLK(cattrp->ca_mode) || S_ISCHR(cattrp->ca_mode)) {
-			//*((u_long *)attrbufptr)++ = 
-			MOVE_PTR_SET(attrbufptr, u_long, 1,(u_long)cattrp->ca_rdev);
+			//*((u_long *)attrbufptr)++ =
+			MOVE_PTR_SET(attrbufptr, u_long, 1, (u_long)cattrp->ca_rdev);
 		} else {
 			// *((u_long *)attrbufptr)++ = 0;
 			MOVE_PTR_SET(attrbufptr, u_long, 1, 0);
@@ -1617,12 +1511,12 @@ packfileattr(
 	}
 	if (ATTR_FILE_FORKCOUNT & attr) {
 		// *((u_long *)attrbufptr)++ = 2;
-		MOVE_PTR_SET(attrbufptr, u_long, 1, 2);	
+		MOVE_PTR_SET(attrbufptr, u_long, 1, 2);
 	}
 	if (ATTR_FILE_FORKLIST & attr) {
 		attrlength = 0;
 		((struct attrreference *)attrbufptr)->attr_dataoffset = 0;
-		((struct attrreference *)attrbufptr)->attr_length = attrlength;	
+		((struct attrreference *)attrbufptr)->attr_length = attrlength;
 		/*
 		 * Advance beyond the space just allocated and
 		 * round up to the next 4-byte boundary:
@@ -1633,16 +1527,16 @@ packfileattr(
 		MOVE_PTR(attrbufptr, struct attrreference, 1);
 	}
 	if (ATTR_FILE_DATALENGTH & attr) {
-		// *((off_t *)attrbufptr)++ = 
-		MOVE_PTR_SET(attrbufptr, u_long, 1,datafork->cf_size);
+		// *((off_t *)attrbufptr)++ =
+		MOVE_PTR_SET(attrbufptr, u_long, 1, datafork->cf_size);
 	}
 	if (ATTR_FILE_DATAALLOCSIZE & attr) {
 		// *((off_t *)attrbufptr)++ =
-		MOVE_PTR_SET(attrbufptr, u_long, 1,(off_t)datafork->cf_blocks * (off_t)allocblksize);
+		MOVE_PTR_SET(attrbufptr, u_long, 1, (off_t)datafork->cf_blocks * (off_t)allocblksize);
 	}
 	if (ATTR_FILE_DATAEXTENTS & attr) {
 		bcopy(&datafork->cf_extents, attrbufptr, sizeof(extentrecord));
-		// (char *)attrbufptr += 
+		// (char *)attrbufptr +=
 		MOVE_PTR_SET(attrbufptr, u_long, 1, sizeof(extentrecord));
 	}
 	if (ATTR_FILE_RSRCLENGTH & attr) {
@@ -1651,17 +1545,16 @@ packfileattr(
 	}
 	if (ATTR_FILE_RSRCALLOCSIZE & attr) {
 		// *((off_t *)attrbufptr)++ =
-		MOVE_PTR_SET(attrbufptr, u_long, 1,(off_t)rsrcfork->cf_blocks * (off_t)allocblksize);
+		MOVE_PTR_SET(attrbufptr, u_long, 1, (off_t)rsrcfork->cf_blocks * (off_t)allocblksize);
 	}
 	if (ATTR_FILE_RSRCEXTENTS & attr) {
 		bcopy(&rsrcfork->cf_extents, attrbufptr, sizeof(extentrecord));
-		// (char *)attrbufptr += 
-		MOVE_PTR_SET(attrbufptr, u_long, 1,sizeof(extentrecord));
+		// (char *)attrbufptr +=
+		MOVE_PTR_SET(attrbufptr, u_long, 1, sizeof(extentrecord));
 	}
 	*abp->ab_attrbufpp = attrbufptr;
 	*abp->ab_varbufpp = varbufptr;
 }
-
 
 static void
 unpackattrblk(struct attrblock *abp, struct vnode *vp)
@@ -1674,11 +1567,8 @@ unpackattrblk(struct attrblock *abp, struct vnode *vp)
 		unpackcommonattr(abp, vp);
 }
 
-
 static void
-unpackcommonattr(
-	struct attrblock *abp,
-	struct vnode *vp)
+unpackcommonattr(struct attrblock *abp, struct vnode *vp)
 {
 	attrgroup_t attr = abp->ab_attrlist->commonattr;
 	void *attrbufptr = *abp->ab_attrbufpp;
@@ -1686,7 +1576,7 @@ unpackcommonattr(
 
 	if (ATTR_CMN_SCRIPT & attr) {
 		MOVE_PTR(attrbufptr, text_encoding_t, 1);
-		cp->c_encoding = (u_int32_t) *(text_encoding_t *)attrbufptr;
+		cp->c_encoding = (u_int32_t) * (text_encoding_t *)attrbufptr;
 		hfs_setencodingbits(VTOHFS(vp), cp->c_encoding);
 	}
 	if (ATTR_CMN_CRTIME & attr) {
@@ -1719,8 +1609,7 @@ unpackcommonattr(
 		MOVE_PTR(attrbufptr, struct timespec, 1);
 	}
 	if (ATTR_CMN_FNDRINFO & attr) {
-		bcopy(attrbufptr, &cp->c_attr.ca_finderinfo,
-			sizeof(cp->c_attr.ca_finderinfo));
+		bcopy(attrbufptr, &cp->c_attr.ca_finderinfo, sizeof(cp->c_attr.ca_finderinfo));
 		// (char *)attrbufptr += sizeof(cp->c_attr.ca_finderinfo);
 		MOVE_PTR(attrbufptr, char, sizeof(cp->c_attr.ca_finderinfo));
 	}
@@ -1728,7 +1617,7 @@ unpackcommonattr(
 		if (VTOVCB(vp)->vcbSigWord == kHFSPlusSigWord) {
 			MOVE_PTR(attrbufptr, uid_t, 1);
 			// u_int32_t uid = (u_int32_t)*((uid_t *)attrbufptr)++;
-			u_int32_t uid = (u_int32_t)*(uid_t *)attrbufptr;
+			u_int32_t uid = (u_int32_t) * (uid_t *)attrbufptr;
 			if (uid != (uid_t)VNOVAL)
 				cp->c_uid = uid;
 		} else {
@@ -1738,36 +1627,34 @@ unpackcommonattr(
 	}
 	if (ATTR_CMN_GRPID & attr) {
 		MOVE_PTR(attrbufptr, gid_t, 1);
-		u_int32_t gid = (u_int32_t)*(gid_t *)attrbufptr;
+		u_int32_t gid = (u_int32_t) * (gid_t *)attrbufptr;
 		if (VTOVCB(vp)->vcbSigWord == kHFSPlusSigWord) {
-		    if (gid != (gid_t)VNOVAL)
-			cp->c_gid = gid;
+			if (gid != (gid_t)VNOVAL)
+				cp->c_gid = gid;
 		}
 	}
 	if (ATTR_CMN_ACCESSMASK & attr) {
 		MOVE_PTR(attrbufptr, u_long, 1);
-		u_int16_t mode = (u_int16_t)*(u_long *)attrbufptr;
-        	// u_int16_t mode = (u_int16_t)*((u_long *)attrbufptr)++;
-        	if (VTOVCB(vp)->vcbSigWord == kHFSPlusSigWord) {
+		u_int16_t mode = (u_int16_t) * (u_long *)attrbufptr;
+		// u_int16_t mode = (u_int16_t)*((u_long *)attrbufptr)++;
+		if (VTOVCB(vp)->vcbSigWord == kHFSPlusSigWord) {
 			if (mode != (mode_t)VNOVAL) {
-                		cp->c_mode &= ~ALLPERMS;
-                		cp->c_mode |= (mode & ALLPERMS);
+				cp->c_mode &= ~ALLPERMS;
+				cp->c_mode |= (mode & ALLPERMS);
 			}
-        	}
+		}
 	}
 	if (ATTR_CMN_FLAGS & attr) {
 		MOVE_PTR(attrbufptr, u_long, 1);
 		u_long flags = *(u_long *)attrbufptr;
-		
+
 		/*
 		 * Flags are settable only on HFS+ volumes.  A special
 		 * exception is made for the IMMUTABLE flags
 		 * (SF_IMMUTABLE and UF_IMMUTABLE), which can be set on
 		 * HFS volumes as well:
 		 */
-		if ((VTOVCB(vp)->vcbSigWord == kHFSPlusSigWord) ||
-		    ((VTOVCB(vp)->vcbSigWord == kHFSSigWord) &&
-		     ((flags & ~IMMUTABLE) == 0))) {
+		if ((VTOVCB(vp)->vcbSigWord == kHFSPlusSigWord) || ((VTOVCB(vp)->vcbSigWord == kHFSSigWord) && ((flags & ~IMMUTABLE) == 0))) {
 			if (flags != (u_long)VNOVAL) {
 				cp->c_xflags = flags;
 			}
@@ -1776,12 +1663,8 @@ unpackcommonattr(
 	*abp->ab_attrbufpp = attrbufptr;
 }
 
-
 static void
-unpackvolattr(
-	struct attrblock *abp,
-	struct hfsmount *hfsmp,
-	struct vnode *rootvp)
+unpackvolattr(struct attrblock *abp, struct hfsmount *hfsmp, struct vnode *rootvp)
 {
 	void *attrbufptr = *abp->ab_attrbufpp;
 	ExtendedVCB *vcb = HFSTOVCB(hfsmp);
@@ -1824,15 +1707,14 @@ unpackvolattr(
 		MOVE_PTR(attrbufptr, char, sizeof(vcb->vcbFndrInfo));
 	}
 
-volattr:	
+volattr:
 	attr = abp->ab_attrlist->volattr & ~ATTR_VOL_INFO;
 	/*
 	 * XXX - no validation is done on the name!
 	 * It could be empty or garbage (bad UTF-8).
 	 */
 	if (ATTR_VOL_NAME & attr) {
-		copystr(((char *)attrbufptr) + *((u_long *)attrbufptr),
-			vcb->vcbVN, sizeof(vcb->vcbVN), NULL);
+		copystr(((char *)attrbufptr) + *((u_long *)attrbufptr), vcb->vcbVN, sizeof(vcb->vcbVN), NULL);
 		// (char *)attrbufptr += sizeof(struct attrreference);
 		MOVE_PTR(attrbufptr, char, sizeof(struct attrreference));
 	}
@@ -1844,159 +1726,217 @@ volattr:
 /*
  * Calculate the total size of an attribute block.
  */
- __private_extern__
+
 int
 hfs_attrblksize(struct attrlist *attrlist)
 {
 	int size;
 	attrgroup_t a;
-/*
-#define STR2(x) #x
-#define STR(x) STR2(x)
+	/*
+	#define STR2(x) #x
+	#define STR(x) STR2(x)
 
-int computed_mask = (ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_FSID | ATTR_CMN_OBJTYPE	|  
-      ATTR_CMN_OBJTAG | ATTR_CMN_OBJID | ATTR_CMN_OBJPERMANENTID |
-      ATTR_CMN_PAROBJID | ATTR_CMN_SCRIPT | ATTR_CMN_CRTIME |
-      ATTR_CMN_MODTIME | ATTR_CMN_CHGTIME | ATTR_CMN_ACCTIME |
-      ATTR_CMN_BKUPTIME | ATTR_CMN_FNDRINFO | ATTR_CMN_OWNERID |
-      ATTR_CMN_GRPID | ATTR_CMN_ACCESSMASK | ATTR_CMN_NAMEDATTRCOUNT |
-      ATTR_CMN_NAMEDATTRLIST | ATTR_CMN_FLAGS | ATTR_CMN_USERACCESS);
+	int computed_mask = (ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_FSID | ATTR_CMN_OBJTYPE	|
+	      ATTR_CMN_OBJTAG | ATTR_CMN_OBJID | ATTR_CMN_OBJPERMANENTID |
+	      ATTR_CMN_PAROBJID | ATTR_CMN_SCRIPT | ATTR_CMN_CRTIME |
+	      ATTR_CMN_MODTIME | ATTR_CMN_CHGTIME | ATTR_CMN_ACCTIME |
+	      ATTR_CMN_BKUPTIME | ATTR_CMN_FNDRINFO | ATTR_CMN_OWNERID |
+	      ATTR_CMN_GRPID | ATTR_CMN_ACCESSMASK | ATTR_CMN_NAMEDATTRCOUNT |
+	      ATTR_CMN_NAMEDATTRLIST | ATTR_CMN_FLAGS | ATTR_CMN_USERACCESS);
 
-#if ((ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_FSID | ATTR_CMN_OBJTYPE	|  \
-      ATTR_CMN_OBJTAG | ATTR_CMN_OBJID | ATTR_CMN_OBJPERMANENTID |         \
-      ATTR_CMN_PAROBJID | ATTR_CMN_SCRIPT | ATTR_CMN_CRTIME |              \
-      ATTR_CMN_MODTIME | ATTR_CMN_CHGTIME | ATTR_CMN_ACCTIME |             \
-      ATTR_CMN_BKUPTIME | ATTR_CMN_FNDRINFO | ATTR_CMN_OWNERID |           \
-      ATTR_CMN_GRPID | ATTR_CMN_ACCESSMASK | ATTR_CMN_NAMEDATTRCOUNT |     \
-      ATTR_CMN_NAMEDATTRLIST | ATTR_CMN_FLAGS | ATTR_CMN_USERACCESS)       \
-      != ATTR_CMN_VALIDMASK)
-#error	hfs_attrblksize: Missing bits in common mask computation!
-#pragma message("Computed Mask: " STR(computed_mask))
-#endif
-	// DBG_ASSERT((attrlist->commonattr & ~ATTR_CMN_VALIDMASK) == 0);
+	#if ((ATTR_CMN_NAME | ATTR_CMN_DEVID | ATTR_CMN_FSID | ATTR_CMN_OBJTYPE	|  \
+	      ATTR_CMN_OBJTAG | ATTR_CMN_OBJID | ATTR_CMN_OBJPERMANENTID |         \
+	      ATTR_CMN_PAROBJID | ATTR_CMN_SCRIPT | ATTR_CMN_CRTIME |              \
+	      ATTR_CMN_MODTIME | ATTR_CMN_CHGTIME | ATTR_CMN_ACCTIME |             \
+	      ATTR_CMN_BKUPTIME | ATTR_CMN_FNDRINFO | ATTR_CMN_OWNERID |           \
+	      ATTR_CMN_GRPID | ATTR_CMN_ACCESSMASK | ATTR_CMN_NAMEDATTRCOUNT |     \
+	      ATTR_CMN_NAMEDATTRLIST | ATTR_CMN_FLAGS | ATTR_CMN_USERACCESS)       \
+	      != ATTR_CMN_VALIDMASK)
+	#error	hfs_attrblksize: Missing bits in common mask computation!
+	#pragma message("Computed Mask: " STR(computed_mask))
+	#endif
+		// DBG_ASSERT((attrlist->commonattr & ~ATTR_CMN_VALIDMASK) == 0);
 
-#if ((ATTR_VOL_FSTYPE | ATTR_VOL_SIGNATURE | ATTR_VOL_SIZE |                \
-      ATTR_VOL_SPACEFREE | ATTR_VOL_SPACEAVAIL | ATTR_VOL_MINALLOCATION |   \
-      ATTR_VOL_ALLOCATIONCLUMP | ATTR_VOL_IOBLOCKSIZE |                     \
-      ATTR_VOL_OBJCOUNT | ATTR_VOL_FILECOUNT | ATTR_VOL_DIRCOUNT |          \
-      ATTR_VOL_MAXOBJCOUNT | ATTR_VOL_MOUNTPOINT | ATTR_VOL_NAME |          \
-      ATTR_VOL_MOUNTFLAGS | ATTR_VOL_INFO | ATTR_VOL_MOUNTEDDEVICE |        \
-      ATTR_VOL_ENCODINGSUSED | ATTR_VOL_CAPABILITIES | ATTR_VOL_ATTRIBUTES) \
-      != ATTR_VOL_VALIDMASK)
-#error	hfs_attrblksize: Missing bits in volume mask computation!
-#endif
-	// DBG_ASSERT((attrlist->volattr & ~ATTR_VOL_VALIDMASK) == 0);
+	#if ((ATTR_VOL_FSTYPE | ATTR_VOL_SIGNATURE | ATTR_VOL_SIZE |                \
+	      ATTR_VOL_SPACEFREE | ATTR_VOL_SPACEAVAIL | ATTR_VOL_MINALLOCATION |   \
+	      ATTR_VOL_ALLOCATIONCLUMP | ATTR_VOL_IOBLOCKSIZE |                     \
+	      ATTR_VOL_OBJCOUNT | ATTR_VOL_FILECOUNT | ATTR_VOL_DIRCOUNT |          \
+	      ATTR_VOL_MAXOBJCOUNT | ATTR_VOL_MOUNTPOINT | ATTR_VOL_NAME |          \
+	      ATTR_VOL_MOUNTFLAGS | ATTR_VOL_INFO | ATTR_VOL_MOUNTEDDEVICE |        \
+	      ATTR_VOL_ENCODINGSUSED | ATTR_VOL_CAPABILITIES | ATTR_VOL_ATTRIBUTES) \
+	      != ATTR_VOL_VALIDMASK)
+	#error	hfs_attrblksize: Missing bits in volume mask computation!
+	#endif
+		// DBG_ASSERT((attrlist->volattr & ~ATTR_VOL_VALIDMASK) == 0);
 
-#if ((ATTR_DIR_LINKCOUNT | ATTR_DIR_ENTRYCOUNT | ATTR_DIR_MOUNTSTATUS)  \
-      != ATTR_DIR_VALIDMASK)
-#error	hfs_attrblksize: Missing bits in directory mask computation!
-#endif
-	// DBG_ASSERT((attrlist->dirattr & ~ATTR_DIR_VALIDMASK) == 0);
+	#if ((ATTR_DIR_LINKCOUNT | ATTR_DIR_ENTRYCOUNT | ATTR_DIR_MOUNTSTATUS)  \
+	      != ATTR_DIR_VALIDMASK)
+	#error	hfs_attrblksize: Missing bits in directory mask computation!
+	#endif
+		// DBG_ASSERT((attrlist->dirattr & ~ATTR_DIR_VALIDMASK) == 0);
 
-#if ((ATTR_FILE_LINKCOUNT | ATTR_FILE_TOTALSIZE | ATTR_FILE_ALLOCSIZE |        \
-      ATTR_FILE_IOBLOCKSIZE | ATTR_FILE_CLUMPSIZE | ATTR_FILE_DEVTYPE |        \
-      ATTR_FILE_FILETYPE | ATTR_FILE_FORKCOUNT | ATTR_FILE_FORKLIST |          \
-      ATTR_FILE_DATALENGTH | ATTR_FILE_DATAALLOCSIZE | ATTR_FILE_DATAEXTENTS | \
-      ATTR_FILE_RSRCLENGTH | ATTR_FILE_RSRCALLOCSIZE | ATTR_FILE_RSRCEXTENTS)  \
-      != ATTR_FILE_VALIDMASK)
-#error	hfs_attrblksize: Missing bits in file mask computation!
-#endif
-	// DBG_ASSERT((attrlist->fileattr & ~ATTR_FILE_VALIDMASK) == 0);
+	#if ((ATTR_FILE_LINKCOUNT | ATTR_FILE_TOTALSIZE | ATTR_FILE_ALLOCSIZE |        \
+	      ATTR_FILE_IOBLOCKSIZE | ATTR_FILE_CLUMPSIZE | ATTR_FILE_DEVTYPE |        \
+	      ATTR_FILE_FILETYPE | ATTR_FILE_FORKCOUNT | ATTR_FILE_FORKLIST |          \
+	      ATTR_FILE_DATALENGTH | ATTR_FILE_DATAALLOCSIZE | ATTR_FILE_DATAEXTENTS | \
+	      ATTR_FILE_RSRCLENGTH | ATTR_FILE_RSRCALLOCSIZE | ATTR_FILE_RSRCEXTENTS)  \
+	      != ATTR_FILE_VALIDMASK)
+	#error	hfs_attrblksize: Missing bits in file mask computation!
+	#endif
+		// DBG_ASSERT((attrlist->fileattr & ~ATTR_FILE_VALIDMASK) == 0);
 
-#if ((ATTR_FORK_TOTALSIZE | ATTR_FORK_ALLOCSIZE) != ATTR_FORK_VALIDMASK)
-#error	hfs_attrblksize: Missing bits in fork mask computation!
-#endif
-	// DBG_ASSERT((attrlist->forkattr & ~ATTR_FORK_VALIDMASK) == 0);
-*/
+	#if ((ATTR_FORK_TOTALSIZE | ATTR_FORK_ALLOCSIZE) != ATTR_FORK_VALIDMASK)
+	#error	hfs_attrblksize: Missing bits in fork mask computation!
+	#endif
+		// DBG_ASSERT((attrlist->forkattr & ~ATTR_FORK_VALIDMASK) == 0);
+	*/
 	size = 0;
-	
+
 	if ((a = attrlist->commonattr) != 0) {
-        if (a & ATTR_CMN_NAME) size += sizeof(struct attrreference);
-		if (a & ATTR_CMN_DEVID) size += sizeof(struct cdev*);
-		if (a & ATTR_CMN_FSID) size += sizeof(fsid_t);
-		if (a & ATTR_CMN_OBJTYPE) size += sizeof(fsobj_type_t);
-		if (a & ATTR_CMN_OBJTAG) size += sizeof(fsobj_tag_t);
-		if (a & ATTR_CMN_OBJID) size += sizeof(fsobj_id_t);
-		if (a & ATTR_CMN_OBJPERMANENTID) size += sizeof(fsobj_id_t);
-		if (a & ATTR_CMN_PAROBJID) size += sizeof(fsobj_id_t);
-		if (a & ATTR_CMN_SCRIPT) size += sizeof(text_encoding_t);
-		if (a & ATTR_CMN_CRTIME) size += sizeof(struct timespec);
-		if (a & ATTR_CMN_MODTIME) size += sizeof(struct timespec);
-		if (a & ATTR_CMN_CHGTIME) size += sizeof(struct timespec);
-		if (a & ATTR_CMN_ACCTIME) size += sizeof(struct timespec);
-		if (a & ATTR_CMN_BKUPTIME) size += sizeof(struct timespec);
-		if (a & ATTR_CMN_FNDRINFO) size += 32 * sizeof(u_int8_t);
-		if (a & ATTR_CMN_OWNERID) size += sizeof(uid_t);
-		if (a & ATTR_CMN_GRPID) size += sizeof(gid_t);
-		if (a & ATTR_CMN_ACCESSMASK) size += sizeof(u_long);
-		if (a & ATTR_CMN_NAMEDATTRCOUNT) size += sizeof(u_long);
-		if (a & ATTR_CMN_NAMEDATTRLIST) size += sizeof(struct attrreference);
-		if (a & ATTR_CMN_FLAGS) size += sizeof(u_long);
-		if (a & ATTR_CMN_USERACCESS) size += sizeof(u_long);
+		if (a & ATTR_CMN_NAME)
+			size += sizeof(struct attrreference);
+		if (a & ATTR_CMN_DEVID)
+			size += sizeof(struct cdev *);
+		if (a & ATTR_CMN_FSID)
+			size += sizeof(fsid_t);
+		if (a & ATTR_CMN_OBJTYPE)
+			size += sizeof(fsobj_type_t);
+		if (a & ATTR_CMN_OBJTAG)
+			size += sizeof(fsobj_tag_t);
+		if (a & ATTR_CMN_OBJID)
+			size += sizeof(fsobj_id_t);
+		if (a & ATTR_CMN_OBJPERMANENTID)
+			size += sizeof(fsobj_id_t);
+		if (a & ATTR_CMN_PAROBJID)
+			size += sizeof(fsobj_id_t);
+		if (a & ATTR_CMN_SCRIPT)
+			size += sizeof(text_encoding_t);
+		if (a & ATTR_CMN_CRTIME)
+			size += sizeof(struct timespec);
+		if (a & ATTR_CMN_MODTIME)
+			size += sizeof(struct timespec);
+		if (a & ATTR_CMN_CHGTIME)
+			size += sizeof(struct timespec);
+		if (a & ATTR_CMN_ACCTIME)
+			size += sizeof(struct timespec);
+		if (a & ATTR_CMN_BKUPTIME)
+			size += sizeof(struct timespec);
+		if (a & ATTR_CMN_FNDRINFO)
+			size += 32 * sizeof(u_int8_t);
+		if (a & ATTR_CMN_OWNERID)
+			size += sizeof(uid_t);
+		if (a & ATTR_CMN_GRPID)
+			size += sizeof(gid_t);
+		if (a & ATTR_CMN_ACCESSMASK)
+			size += sizeof(u_long);
+		if (a & ATTR_CMN_NAMEDATTRCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_CMN_NAMEDATTRLIST)
+			size += sizeof(struct attrreference);
+		if (a & ATTR_CMN_FLAGS)
+			size += sizeof(u_long);
+		if (a & ATTR_CMN_USERACCESS)
+			size += sizeof(u_long);
 	};
 	if ((a = attrlist->volattr) != 0) {
-		if (a & ATTR_VOL_FSTYPE) size += sizeof(u_long);
-		if (a & ATTR_VOL_SIGNATURE) size += sizeof(u_long);
-		if (a & ATTR_VOL_SIZE) size += sizeof(off_t);
-		if (a & ATTR_VOL_SPACEFREE) size += sizeof(off_t);
-		if (a & ATTR_VOL_SPACEAVAIL) size += sizeof(off_t);
-		if (a & ATTR_VOL_MINALLOCATION) size += sizeof(off_t);
-		if (a & ATTR_VOL_ALLOCATIONCLUMP) size += sizeof(off_t);
-		if (a & ATTR_VOL_IOBLOCKSIZE) size += sizeof(u_long);
-		if (a & ATTR_VOL_OBJCOUNT) size += sizeof(u_long);
-		if (a & ATTR_VOL_FILECOUNT) size += sizeof(u_long);
-		if (a & ATTR_VOL_DIRCOUNT) size += sizeof(u_long);
-		if (a & ATTR_VOL_MAXOBJCOUNT) size += sizeof(u_long);
-		if (a & ATTR_VOL_MOUNTPOINT) size += sizeof(struct attrreference);
-		if (a & ATTR_VOL_NAME) size += sizeof(struct attrreference);
-		if (a & ATTR_VOL_MOUNTFLAGS) size += sizeof(u_long);
-		if (a & ATTR_VOL_MOUNTEDDEVICE) size += sizeof(struct attrreference);
-		if (a & ATTR_VOL_ENCODINGSUSED) size += sizeof(unsigned long long);
-		if (a & ATTR_VOL_CAPABILITIES) size += sizeof(vol_capabilities_attr_t);
-		if (a & ATTR_VOL_ATTRIBUTES) size += sizeof(vol_attributes_attr_t);
+		if (a & ATTR_VOL_FSTYPE)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_SIGNATURE)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_SIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_VOL_SPACEFREE)
+			size += sizeof(off_t);
+		if (a & ATTR_VOL_SPACEAVAIL)
+			size += sizeof(off_t);
+		if (a & ATTR_VOL_MINALLOCATION)
+			size += sizeof(off_t);
+		if (a & ATTR_VOL_ALLOCATIONCLUMP)
+			size += sizeof(off_t);
+		if (a & ATTR_VOL_IOBLOCKSIZE)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_OBJCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_FILECOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_DIRCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_MAXOBJCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_MOUNTPOINT)
+			size += sizeof(struct attrreference);
+		if (a & ATTR_VOL_NAME)
+			size += sizeof(struct attrreference);
+		if (a & ATTR_VOL_MOUNTFLAGS)
+			size += sizeof(u_long);
+		if (a & ATTR_VOL_MOUNTEDDEVICE)
+			size += sizeof(struct attrreference);
+		if (a & ATTR_VOL_ENCODINGSUSED)
+			size += sizeof(unsigned long long);
+		if (a & ATTR_VOL_CAPABILITIES)
+			size += sizeof(vol_capabilities_attr_t);
+		if (a & ATTR_VOL_ATTRIBUTES)
+			size += sizeof(vol_attributes_attr_t);
 	};
 	if ((a = attrlist->dirattr) != 0) {
-		if (a & ATTR_DIR_LINKCOUNT) size += sizeof(u_long);
-		if (a & ATTR_DIR_ENTRYCOUNT) size += sizeof(u_long);
-		if (a & ATTR_DIR_MOUNTSTATUS) size += sizeof(u_long);
+		if (a & ATTR_DIR_LINKCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_DIR_ENTRYCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_DIR_MOUNTSTATUS)
+			size += sizeof(u_long);
 	};
 	if ((a = attrlist->fileattr) != 0) {
-		if (a & ATTR_FILE_LINKCOUNT) size += sizeof(u_long);
-		if (a & ATTR_FILE_TOTALSIZE) size += sizeof(off_t);
-		if (a & ATTR_FILE_ALLOCSIZE) size += sizeof(off_t);
-		if (a & ATTR_FILE_IOBLOCKSIZE) size += sizeof(size_t);
-		if (a & ATTR_FILE_CLUMPSIZE) size += sizeof(off_t);
-		if (a & ATTR_FILE_DEVTYPE) size += sizeof(u_long);
-		if (a & ATTR_FILE_FILETYPE) size += sizeof(u_long);
-		if (a & ATTR_FILE_FORKCOUNT) size += sizeof(u_long);
-		if (a & ATTR_FILE_FORKLIST) size += sizeof(struct attrreference);
-		if (a & ATTR_FILE_DATALENGTH) size += sizeof(off_t);
-		if (a & ATTR_FILE_DATAALLOCSIZE) size += sizeof(off_t);
-		if (a & ATTR_FILE_DATAEXTENTS) size += sizeof(extentrecord);
-		if (a & ATTR_FILE_RSRCLENGTH) size += sizeof(off_t);
-		if (a & ATTR_FILE_RSRCALLOCSIZE) size += sizeof(off_t);
-		if (a & ATTR_FILE_RSRCEXTENTS) size += sizeof(extentrecord);
+		if (a & ATTR_FILE_LINKCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_FILE_TOTALSIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_ALLOCSIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_IOBLOCKSIZE)
+			size += sizeof(size_t);
+		if (a & ATTR_FILE_CLUMPSIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_DEVTYPE)
+			size += sizeof(u_long);
+		if (a & ATTR_FILE_FILETYPE)
+			size += sizeof(u_long);
+		if (a & ATTR_FILE_FORKCOUNT)
+			size += sizeof(u_long);
+		if (a & ATTR_FILE_FORKLIST)
+			size += sizeof(struct attrreference);
+		if (a & ATTR_FILE_DATALENGTH)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_DATAALLOCSIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_DATAEXTENTS)
+			size += sizeof(extentrecord);
+		if (a & ATTR_FILE_RSRCLENGTH)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_RSRCALLOCSIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_FILE_RSRCEXTENTS)
+			size += sizeof(extentrecord);
 	};
 	if ((a = attrlist->forkattr) != 0) {
-		if (a & ATTR_FORK_TOTALSIZE) size += sizeof(off_t);
-		if (a & ATTR_FORK_ALLOCSIZE) size += sizeof(off_t);
+		if (a & ATTR_FORK_TOTALSIZE)
+			size += sizeof(off_t);
+		if (a & ATTR_FORK_ALLOCSIZE)
+			size += sizeof(off_t);
 	};
 
 	return size;
 }
 
-
-__private_extern__
 unsigned long
-DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid, mode_t obj_mode,
-			struct mount *mp, struct ucred *cred)
+DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid, mode_t obj_mode, struct mount *mp, struct ucred *cred)
 {
 	register gid_t *gp;
 	unsigned long permissions;
 	int i;
 
 	if (obj_uid == UNKNOWNUID)
-		obj_uid = cred->cr_uid;// console_user;
+		obj_uid = cred->cr_uid; // console_user;
 
 	/* User id 0 (root) always gets access. */
 	if (cred->cr_uid == 0) {
@@ -2011,7 +1951,7 @@ DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid, mode_t obj_mode,
 	}
 
 	/* Otherwise, check the groups. */
-	if (! (mp->mnt_flag & MNT_UNKNOWNPERMISSIONS)) {
+	if (!(mp->mnt_flag & MNT_UNKNOWNPERMISSIONS)) {
 		for (i = 0, gp = cred->cr_groups; i < cred->cr_ngroups; i++, gp++) {
 			if (obj_gid == *gp) {
 				permissions = ((unsigned long)obj_mode & S_IRWXG) >> 3;
@@ -2024,6 +1964,5 @@ DerivePermissionSummary(uid_t obj_uid, gid_t obj_gid, mode_t obj_mode,
 	permissions = (unsigned long)obj_mode & S_IRWXO;
 
 Exit:
-	return (permissions);    
+	return (permissions);
 }
-

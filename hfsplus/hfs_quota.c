@@ -2,13 +2,13 @@
  * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -59,23 +59,21 @@
  */
 
 #include <sys/types.h>
-
 #include <sys/param.h>
-#include <sys/kernel.h>
 #include <sys/systm.h>
+#include <sys/file.h>
+#include <sys/kernel.h>
+#include <sys/malloc.h>
 #include <sys/mount.h>
 #include <sys/namei.h>
-#include <sys/malloc.h>
-#include <sys/file.h>
 #include <sys/proc.h>
 #include <sys/vnode.h>
 // #include <sys/quota.h>
-#include <ufs/ufs/quota.h>
-
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_cnode.h>
-#include <hfsplus/hfs_quota.h>
 #include <hfsplus/hfs_mount.h>
+#include <hfsplus/hfs_quota.h>
+#include <ufs/ufs/quota.h>
 
 /*
  * Quota name to error message mapping.
@@ -91,7 +89,8 @@ static char *quotatypes[] = INITQFNAMES;
  * MAXQUOTAS value in quotas.h should be increased, and the
  * additional dquots set up here.
  */
-int hfs_getinoquota(register struct cnode *cp)
+int
+hfs_getinoquota(register struct cnode *cp)
 {
 #ifdef DARWIN_QUOTA
 	struct hfsmount *hfsmp;
@@ -104,19 +103,15 @@ int hfs_getinoquota(register struct cnode *cp)
 	 * Set up the user quota based on file uid.
 	 * EINVAL means that quotas are not enabled.
 	 */
-// #ifdef DARWIN_QUOTA
-	if (cp->c_dquot[USRQUOTA] == NODQUOT &&
-	    (error =
-		dqget(vp, cp->c_uid, &hfsmp->hfs_qfiles[USRQUOTA], USRQUOTA, &cp->c_dquot[USRQUOTA])) &&
+	// #ifdef DARWIN_QUOTA
+	if (cp->c_dquot[USRQUOTA] == NODQUOT && (error = dqget(vp, cp->c_uid, &hfsmp->hfs_qfiles[USRQUOTA], USRQUOTA, &cp->c_dquot[USRQUOTA])) &&
 	    error != EINVAL)
 		return (error);
 	/*
 	 * Set up the group quota based on file gid.
 	 * EINVAL means that quotas are not enabled.
 	 */
-	if (cp->c_dquot[GRPQUOTA] == NODQUOT &&
-	    (error =
-		dqget(vp, cp->c_gid,  &hfsmp->hfs_qfiles[GRPQUOTA], GRPQUOTA, &cp->c_dquot[GRPQUOTA])) &&
+	if (cp->c_dquot[GRPQUOTA] == NODQUOT && (error = dqget(vp, cp->c_gid, &hfsmp->hfs_qfiles[GRPQUOTA], GRPQUOTA, &cp->c_dquot[GRPQUOTA])) &&
 	    error != EINVAL)
 		return (error);
 	return (0);
@@ -127,13 +122,14 @@ int hfs_getinoquota(register struct cnode *cp)
 /*
  * Update disk usage, and take corrective action.
  */
-int hfs_chkdq(register struct cnode *cp, int64_t change, struct ucred *cred, int flags)
+int
+hfs_chkdq(register struct cnode *cp, int64_t change, struct ucred *cred, int flags)
 {
 #ifdef DARWIN_QUOTA
 	register struct dquot *dq;
 	register int i;
 	int64_t ncurbytes;
-	int error=0;
+	int error = 0;
 	struct proc *p;
 
 #if DIAGNOSTIC
@@ -142,14 +138,14 @@ int hfs_chkdq(register struct cnode *cp, int64_t change, struct ucred *cred, int
 #endif
 	if (change == 0)
 		return (0);
-// #ifdef DARWIN_QUOTA
+	// #ifdef DARWIN_QUOTA
 	if (change < 0) {
 		for (i = 0; i < MAXQUOTAS; i++) {
 			if ((dq = cp->c_dquot[i]) == NODQUOT)
 				continue;
 			while (dq->dq_flags & DQ_LOCK) {
 				dq->dq_flags |= DQ_WANT;
-				sleep((caddr_t)dq, PINOD+1);
+				sleep((caddr_t)dq, PINOD + 1);
 			}
 			ncurbytes = dq->dq_curbytes + change;
 			if (ncurbytes >= 0)
@@ -161,11 +157,11 @@ int hfs_chkdq(register struct cnode *cp, int64_t change, struct ucred *cred, int
 		}
 		return (0);
 	}
-// #endif
-	p = current_proc();
+	// #endif
+	p = curthread;
 	if (cred == NOCRED)
 		cred = kernproc->p_ucred;
-// #ifdef DARWIN_QUOTA
+	// #ifdef DARWIN_QUOTA
 	if ((cred->cr_uid != 0) || (p->p_flag & P_FORCEQUOTA)) {
 		for (i = 0; i < MAXQUOTAS; i++) {
 			if ((dq = cp->c_dquot[i]) == NODQUOT)
@@ -183,7 +179,7 @@ int hfs_chkdq(register struct cnode *cp, int64_t change, struct ucred *cred, int
 				continue;
 			while (dq->dq_flags & DQ_LOCK) {
 				dq->dq_flags |= DQ_WANT;
-				sleep((caddr_t)dq, PINOD+1);
+				sleep((caddr_t)dq, PINOD + 1);
 			}
 			dq->dq_curbytes += change;
 			dq->dq_flags |= DQ_MOD;
@@ -197,7 +193,8 @@ int hfs_chkdq(register struct cnode *cp, int64_t change, struct ucred *cred, int
  * Check for a valid change to a users allocation.
  * Issue an error message if appropriate.
  */
-int hfs_chkdqchg(struct cnode *cp, int64_t change, struct ucred *cred, int type)
+int
+hfs_chkdqchg(struct cnode *cp, int64_t change, struct ucred *cred, int type)
 {
 #ifdef DARWIN_QUOTA
 	register struct dquot *dq = cp->c_dquot[type];
@@ -208,8 +205,7 @@ int hfs_chkdqchg(struct cnode *cp, int64_t change, struct ucred *cred, int type)
 	 * If user would exceed their hard limit, disallow space allocation.
 	 */
 	if (ncurbytes >= dq->dq_bhardlimit && dq->dq_bhardlimit) {
-		if ((dq->dq_flags & DQ_BLKS) == 0 &&
-		    cp->c_uid == cred->cr_uid) {
+		if ((dq->dq_flags & DQ_BLKS) == 0 && cp->c_uid == cred->cr_uid) {
 #if 0	
 			printf("\n%s: write failed, %s disk limit reached\n",
 			    vp->v_mount->mnt_stat.f_mntonname,
@@ -225,8 +221,7 @@ int hfs_chkdqchg(struct cnode *cp, int64_t change, struct ucred *cred, int type)
 	 */
 	if (ncurbytes >= dq->dq_bsoftlimit && dq->dq_bsoftlimit) {
 		if (dq->dq_curbytes < dq->dq_bsoftlimit) {
-			dq->dq_btime = time.tv_sec +
-			    VFSTOHFS(vp->v_mount)->hfs_qfiles[type].qf_btime;
+			dq->dq_btime = time.tv_sec + VFSTOHFS(vp->v_mount)->hfs_qfiles[type].qf_btime;
 #if 0
 			if (cp->c_uid == cred->cr_uid)
 				printf("\n%s: warning, %s %s\n",
@@ -236,8 +231,7 @@ int hfs_chkdqchg(struct cnode *cp, int64_t change, struct ucred *cred, int type)
 			return (0);
 		}
 		if (time.tv_sec > dq->dq_btime) {
-			if ((dq->dq_flags & DQ_BLKS) == 0 &&
-			    cp->c_uid == cred->cr_uid) {
+			if ((dq->dq_flags & DQ_BLKS) == 0 && cp->c_uid == cred->cr_uid) {
 #if 0
 				printf("\n%s: write failed, %s %s\n",
 				    vp->v_mount->mnt_stat.f_mntonname,
@@ -256,12 +250,13 @@ int hfs_chkdqchg(struct cnode *cp, int64_t change, struct ucred *cred, int type)
 /*
  * Check the inode limit, applying corrective action.
  */
-int hfs_chkiq(register struct cnode *cp, long change, struct ucred *cred, int flags)
+int
+hfs_chkiq(register struct cnode *cp, long change, struct ucred *cred, int flags)
 {
 #ifdef DARWIN_QUOTA
 	register struct dquot *dq;
 	register int i;
-	int ncurinodes, error=0;
+	int ncurinodes, error = 0;
 	struct proc *p;
 
 #if DIAGNOSTIC
@@ -276,7 +271,7 @@ int hfs_chkiq(register struct cnode *cp, long change, struct ucred *cred, int fl
 				continue;
 			while (dq->dq_flags & DQ_LOCK) {
 				dq->dq_flags |= DQ_WANT;
-				sleep((caddr_t)dq, PINOD+1);
+				sleep((caddr_t)dq, PINOD + 1);
 			}
 			ncurinodes = dq->dq_curinodes + change;
 			if (ncurinodes >= 0)
@@ -288,7 +283,7 @@ int hfs_chkiq(register struct cnode *cp, long change, struct ucred *cred, int fl
 		}
 		return (0);
 	}
-	p = current_proc();
+	p = curthread;
 	if (cred == NOCRED)
 		cred = kernproc->p_ucred;
 	if ((cred->cr_uid != 0) || (p->p_flag & P_FORCEQUOTA)) {
@@ -301,20 +296,20 @@ int hfs_chkiq(register struct cnode *cp, long change, struct ucred *cred, int fl
 			}
 		}
 	}
-	if ((flags & FORCE) || error == 0) { 
+	if ((flags & FORCE) || error == 0) {
 		for (i = 0; i < MAXQUOTAS; i++) {
 			if ((dq = cp->c_dquot[i]) == NODQUOT)
 				continue;
 			while (dq->dq_flags & DQ_LOCK) {
 				dq->dq_flags |= DQ_WANT;
-				sleep((caddr_t)dq, PINOD+1);
+				sleep((caddr_t)dq, PINOD + 1);
 			}
 			dq->dq_curinodes += change;
 			dq->dq_flags |= DQ_MOD;
 		}
 	}
 	return (error);
-#endif 
+#endif
 	return (0);
 }
 
@@ -334,8 +329,7 @@ hfs_chkiqchg(struct cnode *cp, long change, struct ucred *cred, int type)
 	 * If user would exceed their hard limit, disallow cnode allocation.
 	 */
 	if (ncurinodes >= dq->dq_ihardlimit && dq->dq_ihardlimit) {
-		if ((dq->dq_flags & DQ_INODS) == 0 &&
-		    cp->c_uid == cred->cr_uid) {
+		if ((dq->dq_flags & DQ_INODS) == 0 && cp->c_uid == cred->cr_uid) {
 #if 0
 			printf("\n%s: write failed, %s cnode limit reached\n",
 			    vp->v_mount->mnt_stat.f_mntonname,
@@ -351,8 +345,7 @@ hfs_chkiqchg(struct cnode *cp, long change, struct ucred *cred, int type)
 	 */
 	if (ncurinodes >= dq->dq_isoftlimit && dq->dq_isoftlimit) {
 		if (dq->dq_curinodes < dq->dq_isoftlimit) {
-			dq->dq_itime = time.tv_sec +
-			    VFSTOHFS(vp->v_mount)->hfs_qfiles[type].qf_itime;
+			dq->dq_itime = time.tv_sec + VFSTOHFS(vp->v_mount)->hfs_qfiles[type].qf_itime;
 #if 0
 			if (cp->c_uid == cred->cr_uid)
 				printf("\n%s: warning, %s %s\n",
@@ -362,8 +355,7 @@ hfs_chkiqchg(struct cnode *cp, long change, struct ucred *cred, int type)
 			return (0);
 		}
 		if (time.tv_sec > dq->dq_itime) {
-			if ((dq->dq_flags & DQ_INODS) == 0 &&
-			    cp->c_uid == cred->cr_uid) {
+			if ((dq->dq_flags & DQ_INODS) == 0 && cp->c_uid == cred->cr_uid) {
 #if 0
 				printf("\n%s: write failed, %s %s\n",
 				    vp->v_mount->mnt_stat.f_mntonname,
@@ -385,23 +377,24 @@ hfs_chkiqchg(struct cnode *cp, long change, struct ucred *cred, int type)
  * size and not to have a dquot structure associated with it.
  */
 
-void hfs_chkdquot(register struct cnode *cp)
+void
+hfs_chkdquot(register struct cnode *cp)
 {
-/*
-	struct vnode *vp = cp->c_vp ? cp->c_vp : cp->c_rsrc_vp;
-	struct hfsmount *hfsmp = VFSTOHFS(vp->v_mount);
-	register int i;
+	/*
+		struct vnode *vp = cp->c_vp ? cp->c_vp : cp->c_rsrc_vp;
+		struct hfsmount *hfsmp = VFSTOHFS(vp->v_mount);
+		register int i;
 
-	for (i = 0; i < MAXQUOTAS; i++) {
-		if (hfsmp->hfs_qfiles[i].qf_vp == NULLVP ||
-		    (hfsmp->hfs_qfiles[i].qf_qflags & (QTF_OPENING|QTF_CLOSING)))
-			continue;
-		if (cp->c_dquot[i] == NODQUOT) {
-			vprint("chkdquot: missing dquot", vp);
-			panic("missing dquot");
+		for (i = 0; i < MAXQUOTAS; i++) {
+			if (hfsmp->hfs_qfiles[i].qf_vp == NULLVP ||
+			    (hfsmp->hfs_qfiles[i].qf_qflags & (QTF_OPENING|QTF_CLOSING)))
+				continue;
+			if (cp->c_dquot[i] == NODQUOT) {
+				vprint("chkdquot: missing dquot", vp);
+				panic("missing dquot");
+			}
 		}
-	}
-*/
+	*/
 }
 #endif
 
@@ -412,7 +405,8 @@ void hfs_chkdquot(register struct cnode *cp)
 /*
  * Q_QUOTAON - set up a quota file for a particular file system.
  */
-int hfs_quotaon(struct proc *p, struct mount *mp, register int type, caddr_t fname, enum uio_seg segflg)
+int
+hfs_quotaon(struct proc *p, struct mount *mp, register int type, caddr_t fname, enum uio_seg segflg)
 {
 #ifdef DARWIN_QUOTA
 	struct hfsmount *hfsmp = VFSTOHFS(mp);
@@ -424,12 +418,12 @@ int hfs_quotaon(struct proc *p, struct mount *mp, register int type, caddr_t fna
 
 	vpp = &hfsmp->hfs_qfiles[type].qf_vp;
 	NDINIT(&nd, LOOKUP, FOLLOW, segflg, fname, p);
-	if (error = vn_open(&nd, FREAD|FWRITE, 0))
+	if (error = vn_open(&nd, FREAD | FWRITE, 0))
 		return (error);
 	vp = nd.ni_vp;
 	VOP_UNLOCK(vp, 0, p);
 	if (vp->v_type != VREG) {
-		(void) vn_close(vp, FREAD|FWRITE, p->p_ucred, p);
+		(void)vn_close(vp, FREAD | FWRITE, p->p_ucred, p);
 		return (EACCES);
 	}
 	if (*vpp != vp)
@@ -471,7 +465,7 @@ exit:
 	if (error)
 		hfs_quotaoff(p, mp, type);
 	return (error);
-#endif 
+#endif
 	return (0);
 }
 
@@ -489,7 +483,7 @@ hfs_quotaoff(struct proc *p, struct mount *mp, register int type)
 	struct cnode *cp;
 	int error;
 	struct ucred *cred;
-	
+
 	if ((qvp = hfsmp->hfs_qfiles[type].qf_vp) == NULLVP)
 		return (0);
 	hfsmp->hfs_qfiles[type].qf_qflags |= QTF_CLOSING;
@@ -520,7 +514,7 @@ again:
 	/* Finish tearing down the quota file */
 	dqfileclose(&hfsmp->hfs_qfiles[type], type);
 	qvp->v_flag &= ~VNOFLUSH;
-	error = vn_close(qvp, FREAD|FWRITE, p->p_ucred, p);
+	error = vn_close(qvp, FREAD | FWRITE, p->p_ucred, p);
 	hfsmp->hfs_qfiles[type].qf_vp = NULLVP;
 	cred = hfsmp->hfs_qfiles[type].qf_cred;
 	if (cred != NOCRED) {
@@ -534,7 +528,7 @@ again:
 	if (type == MAXQUOTAS)
 		mp->mnt_flag &= ~MNT_QUOTA;
 	return (error);
-#endif 
+#endif
 	return (0);
 }
 
@@ -550,17 +544,18 @@ hfs_getquota(struct mount *mp, u_long id, int type, caddr_t addr)
 
 	if (error = dqget(NULLVP, id, &VFSTOHFS(mp)->hfs_qfiles[type], type, &dq))
 		return (error);
-	error = copyout((caddr_t)&dq->dq_dqb, addr, sizeof (struct dqblk));
+	error = copyout((caddr_t)&dq->dq_dqb, addr, sizeof(struct dqblk));
 	dqrele(NULLVP, dq);
 	return (error);
-#endif 
+#endif
 	return (0);
 }
 
 /*
  * Q_SETQUOTA - assign an entire dqblk structure.
  */
-int hfs_setquota(struct mount *mp, u_long id, int type, caddr_t addr)
+int
+hfs_setquota(struct mount *mp, u_long id, int type, caddr_t addr)
 {
 #ifdef DARWIN_QUOTA
 	register struct dquot *dq;
@@ -569,14 +564,14 @@ int hfs_setquota(struct mount *mp, u_long id, int type, caddr_t addr)
 	struct dqblk newlim;
 	int error;
 
-	if (error = copyin(addr, (caddr_t)&newlim, sizeof (struct dqblk)))
+	if (error = copyin(addr, (caddr_t)&newlim, sizeof(struct dqblk)))
 		return (error);
 	if (error = dqget(NULLVP, id, &hfsmp->hfs_qfiles[type], type, &ndq))
 		return (error);
 	dq = ndq;
 	while (dq->dq_flags & DQ_LOCK) {
 		dq->dq_flags |= DQ_WANT;
-		sleep((caddr_t)dq, PINOD+1);
+		sleep((caddr_t)dq, PINOD + 1);
 	}
 	/*
 	 * Copy all but the current values.
@@ -589,21 +584,16 @@ int hfs_setquota(struct mount *mp, u_long id, int type, caddr_t addr)
 		newlim.dqb_btime = dq->dq_btime;
 		newlim.dqb_itime = dq->dq_itime;
 	}
-	if (newlim.dqb_bsoftlimit &&
-	    dq->dq_curbytes >= newlim.dqb_bsoftlimit &&
-	    (dq->dq_bsoftlimit == 0 || dq->dq_curbytes < dq->dq_bsoftlimit))
+	if (newlim.dqb_bsoftlimit && dq->dq_curbytes >= newlim.dqb_bsoftlimit && (dq->dq_bsoftlimit == 0 || dq->dq_curbytes < dq->dq_bsoftlimit))
 		newlim.dqb_btime = time.tv_sec + hfsmp->hfs_qfiles[type].qf_btime;
-	if (newlim.dqb_isoftlimit &&
-	    dq->dq_curinodes >= newlim.dqb_isoftlimit &&
-	    (dq->dq_isoftlimit == 0 || dq->dq_curinodes < dq->dq_isoftlimit))
+	if (newlim.dqb_isoftlimit && dq->dq_curinodes >= newlim.dqb_isoftlimit && (dq->dq_isoftlimit == 0 || dq->dq_curinodes < dq->dq_isoftlimit))
 		newlim.dqb_itime = time.tv_sec + hfsmp->hfs_qfiles[type].qf_itime;
 	dq->dq_dqb = newlim;
 	if (dq->dq_curbytes < dq->dq_bsoftlimit)
 		dq->dq_flags &= ~DQ_BLKS;
 	if (dq->dq_curinodes < dq->dq_isoftlimit)
 		dq->dq_flags &= ~DQ_INODS;
-	if (dq->dq_isoftlimit == 0 && dq->dq_bsoftlimit == 0 &&
-	    dq->dq_ihardlimit == 0 && dq->dq_bhardlimit == 0)
+	if (dq->dq_isoftlimit == 0 && dq->dq_bsoftlimit == 0 && dq->dq_ihardlimit == 0 && dq->dq_bhardlimit == 0)
 		dq->dq_flags |= DQ_FAKE;
 	else
 		dq->dq_flags &= ~DQ_FAKE;
@@ -616,7 +606,8 @@ int hfs_setquota(struct mount *mp, u_long id, int type, caddr_t addr)
 /*
  * Q_SETUSE - set current cnode and byte usage.
  */
-int hfs_setuse(struct mount *mp, u_long id, int type, caddr_t addr)
+int
+hfs_setuse(struct mount *mp, u_long id, int type, caddr_t addr)
 {
 #ifdef DARWIN_QUOTA
 	register struct dquot *dq;
@@ -625,24 +616,22 @@ int hfs_setuse(struct mount *mp, u_long id, int type, caddr_t addr)
 	struct dqblk usage;
 	int error;
 
-	if (error = copyin(addr, (caddr_t)&usage, sizeof (struct dqblk)))
+	if (error = copyin(addr, (caddr_t)&usage, sizeof(struct dqblk)))
 		return (error);
 	if (error = dqget(NULLVP, id, &hfsmp->hfs_qfiles[type], type, &ndq))
 		return (error);
 	dq = ndq;
 	while (dq->dq_flags & DQ_LOCK) {
 		dq->dq_flags |= DQ_WANT;
-		sleep((caddr_t)dq, PINOD+1);
+		sleep((caddr_t)dq, PINOD + 1);
 	}
 	/*
 	 * Reset time limit if have a soft limit and were
 	 * previously under it, but are now over it.
 	 */
-	if (dq->dq_bsoftlimit && dq->dq_curbytes < dq->dq_bsoftlimit &&
-	    usage.dqb_curbytes >= dq->dq_bsoftlimit)
+	if (dq->dq_bsoftlimit && dq->dq_curbytes < dq->dq_bsoftlimit && usage.dqb_curbytes >= dq->dq_bsoftlimit)
 		dq->dq_btime = time.tv_sec + hfsmp->hfs_qfiles[type].qf_btime;
-	if (dq->dq_isoftlimit && dq->dq_curinodes < dq->dq_isoftlimit &&
-	    usage.dqb_curinodes >= dq->dq_isoftlimit)
+	if (dq->dq_isoftlimit && dq->dq_curinodes < dq->dq_isoftlimit && usage.dqb_curinodes >= dq->dq_isoftlimit)
 		dq->dq_itime = time.tv_sec + hfsmp->hfs_qfiles[type].qf_itime;
 	dq->dq_curbytes = usage.dqb_curbytes;
 	dq->dq_curinodes = usage.dqb_curinodes;
@@ -664,7 +653,7 @@ hfs_qsync(struct mount *mp)
 {
 #ifdef DARWIN_QUOTA
 	struct hfsmount *hfsmp = VFSTOHFS(mp);
-	struct proc *p = current_proc();		/* XXX */
+	struct proc *p = curthread; /* XXX */
 	struct vnode *vp, *nextvp;
 	struct dquot *dq;
 	int i, error;
@@ -710,11 +699,7 @@ again:
 
 		// Make sure that this is really an hfs vnode.
 		//
-		if (   vp->v_mount != mp
-			|| vp->v_type == VNON
-			|| vp->v_tag != VT_HFS
-			|| VTOC(vp) == NULL) {
-			
+		if (vp->v_mount != mp || vp->v_type == VNON || vp->v_tag != VT_HFS || VTOC(vp) == NULL) {
 			vput(vp);
 			simple_lock(&mntvnode_slock);
 			goto again;
@@ -736,9 +721,10 @@ again:
 }
 
 /*
- * Q_QUOTASTAT - get quota on/off status 
+ * Q_QUOTASTAT - get quota on/off status
  */
-static int hfs_quotastat(struct mount *mp, register int type, caddr_t addr)
+static int
+hfs_quotastat(struct mount *mp, register int type, caddr_t addr)
 {
 #ifdef DARWIN_QUOTA
 	struct hfsmount *hfsmp = VFSTOHFS(mp);
@@ -746,13 +732,12 @@ static int hfs_quotastat(struct mount *mp, register int type, caddr_t addr)
 	int qstat;
 
 	if ((mp->mnt_flag & MNT_QUOTA) && (hfsmp->hfs_qfiles[type].qf_vp != NULLVP))
-	  qstat = 1;   /* quotas are on for this type */
+		qstat = 1; /* quotas are on for this type */
 	else
-	  qstat = 0;   /* quotas are off for this type */
-	
-	error = copyout ((caddr_t)&qstat, addr, sizeof(qstat));
+		qstat = 0; /* quotas are off for this type */
+
+	error = copyout((caddr_t)&qstat, addr, sizeof(qstat));
 	return (error);
-#endif 
+#endif
 	return (0);
 }
-
