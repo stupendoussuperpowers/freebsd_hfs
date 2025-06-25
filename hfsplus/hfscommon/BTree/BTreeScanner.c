@@ -2,13 +2,13 @@
  * Copyright (c) 1996-2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  *
  *	@(#)BTreeScanner.c
@@ -25,9 +25,8 @@
 
 #include "../headers/BTreeScanner.h"
 
-static int FindNextLeafNode(	BTScanState *scanState, Boolean avoidIO );
-static int ReadMultipleNodes( 	BTScanState *scanState );
-
+static int FindNextLeafNode(BTScanState *scanState, Boolean avoidIO);
+static int ReadMultipleNodes(BTScanState *scanState);
 
 //_________________________________________________________________________________
 //
@@ -55,70 +54,58 @@ static int ReadMultipleNodes( 	BTScanState *scanState );
 //		GetBTreeRecord would).  The caller must not modify the key or data.
 //_________________________________________________________________________________
 
-int BTScanNextRecord(	BTScanState *	scanState,
-						Boolean			avoidIO,
-						void * *		key,
-						void * *		data,
-						u_int32_t *		dataSize  )
+int
+BTScanNextRecord(BTScanState *scanState, Boolean avoidIO, void **key, void **data, u_int32_t *dataSize)
 {
-	int				err;
-	u_int16_t		dataSizeShort;
-	
+	int err;
+	u_int16_t dataSizeShort;
+
 	err = noErr;
 
 	//
 	//	If this is the first call, there won't be any nodes in the buffer, so go
 	//	find the first first leaf node (if any).
-	//	
-	if ( scanState->nodesLeftInBuffer == 0 )
-	{
-		err = FindNextLeafNode( scanState, avoidIO );
+	//
+	if (scanState->nodesLeftInBuffer == 0) {
+		err = FindNextLeafNode(scanState, avoidIO);
 	}
 
-	while ( err == noErr ) 
-	{ 
+	while (err == noErr) {
 		//	See if we have a record in the current node
-		err = GetRecordByIndex( scanState->btcb, scanState->currentNodePtr, 
-								scanState->recordNum, (KeyPtr *) key, 
-								(UInt8 **) data, &dataSizeShort  );
+		err = GetRecordByIndex(scanState->btcb, scanState->currentNodePtr, scanState->recordNum, (KeyPtr *)key, (UInt8 **)data, &dataSizeShort);
 
-		if ( err == noErr )
-		{
+		if (err == noErr) {
 			++scanState->recordsFound;
 			++scanState->recordNum;
 			if (dataSize != NULL)
 				*dataSize = dataSizeShort;
 			return noErr;
-		}
-		else if (err > 0)
-		{
+		} else if (err > 0) {
 			//	We didn't get the node through the cache, so we can't invalidate it.
-			//XXX Should we do something else to avoid seeing the same record again?
+			// XXX Should we do something else to avoid seeing the same record again?
 			return err;
 		}
-		
+
 		//	We're done with the current node.  See if we've returned all the records
-		if ( scanState->recordsFound >= scanState->btcb->leafRecords )
-		{
+		if (scanState->recordsFound >= scanState->btcb->leafRecords) {
 			return btNotFound;
 		}
 
 		//	Move to the first record of the next leaf node
-		scanState->recordNum = 0; 
-		err = FindNextLeafNode( scanState, avoidIO );
+		scanState->recordNum = 0;
+		err = FindNextLeafNode(scanState, avoidIO);
 	}
-	
+
 	//
 	//	If we got an EOF error from FindNextLeafNode, then there are no more leaf
 	//	records to be found.
 	//
-	if ( err == fsEndOfIterationErr )
+	if (err == fsEndOfIterationErr)
 		err = btNotFound;
-	
-	return err;
-	
-} /* BTScanNextRecord */
 
+	return err;
+
+} /* BTScanNextRecord */
 
 //_________________________________________________________________________________
 //
@@ -137,62 +124,53 @@ int BTScanNextRecord(	BTScanState *	scanState,
 //		???				Needed to do I/O to get next node, but avoidIO set
 //_________________________________________________________________________________
 
-static int FindNextLeafNode(	BTScanState *scanState, Boolean avoidIO )
+static int
+FindNextLeafNode(BTScanState *scanState, Boolean avoidIO)
 {
-	int		err;
-	
-	err = noErr;		// Assume everything will be OK
-	
-	while ( 1 ) 
-	{
-		if ( scanState->nodesLeftInBuffer == 0 ) 
-		{
+	int err;
+
+	err = noErr; // Assume everything will be OK
+
+	while (1) {
+		if (scanState->nodesLeftInBuffer == 0) {
 			//	Time to read some more nodes into the buffer
-			if ( avoidIO ) 
-			{
+			if (avoidIO) {
 				return fsBTTimeOutErr;
-			}
-			else 
-			{
+			} else {
 				//	read some more nodes into buffer
-				err = ReadMultipleNodes( scanState );
-				if ( err != noErr ) 
+				err = ReadMultipleNodes(scanState);
+				if (err != noErr)
 					break;
 			}
-		}
-		else 
-		{
+		} else {
 			//	Adjust the node counters and point to the next node in the buffer
 			++scanState->nodeNum;
 			--scanState->nodesLeftInBuffer;
-			
+
 			//	If we've looked at all nodes in the tree, then we're done
-			if ( scanState->nodeNum >= scanState->btcb->totalNodes )
+			if (scanState->nodeNum >= scanState->btcb->totalNodes)
 				return fsEndOfIterationErr;
 
-			if ( scanState->nodesLeftInBuffer == 0 )
-			{
-				scanState->recordNum = 0; 
-				continue; 
+			if (scanState->nodesLeftInBuffer == 0) {
+				scanState->recordNum = 0;
+				continue;
 			}
 
-			(u_int8_t *) scanState->currentNodePtr += scanState->btcb->nodeSize;
+			(u_int8_t *)scanState->currentNodePtr += scanState->btcb->nodeSize;
 		}
-		
+
 		// Make sure this is a valid node
-		if ( CheckNode( scanState->btcb, scanState->currentNodePtr ) != noErr )
-		{
+		if (CheckNode(scanState->btcb, scanState->currentNodePtr) != noErr) {
 			continue;
 		}
-		
-		if ( scanState->currentNodePtr->kind == kBTLeafNode )
+
+		if (scanState->currentNodePtr->kind == kBTLeafNode)
 			break;
 	}
-	
-	return err;
-	
-} /* FindNextLeafNode */
 
+	return err;
+
+} /* FindNextLeafNode */
 
 //_________________________________________________________________________________
 //
@@ -208,65 +186,55 @@ static int FindNextLeafNode(	BTScanState *scanState, Boolean avoidIO )
 //		fsEndOfIterationErr		No nodes left in file, none in buffer
 //_________________________________________________________________________________
 
-static int ReadMultipleNodes( BTScanState *theScanStatePtr )
+static int
+ReadMultipleNodes(BTScanState *theScanStatePtr)
 {
-	int						myErr = E_NONE;
-	BTreeControlBlockPtr  	myBTreeCBPtr;
-	daddr_t					myPhyBlockNum;
-	u_int32_t				myBufferSize;
-	struct vnode *			myDevPtr;
-	int						myBlockRun;
-	u_int32_t				myBlocksInBufferCount;
+	int myErr = E_NONE;
+	BTreeControlBlockPtr myBTreeCBPtr;
+	daddr_t myPhyBlockNum;
+	u_int32_t myBufferSize;
+	struct vnode *myDevPtr;
+	int myBlockRun;
+	u_int32_t myBlocksInBufferCount;
 
 	// release old buffer if we have one
-	if ( theScanStatePtr->bufferPtr != NULL )
-	{
-	    theScanStatePtr->bufferPtr->b_flags |= (B_INVAL | B_AGE);
-		brelse( theScanStatePtr->bufferPtr );
+	if (theScanStatePtr->bufferPtr != NULL) {
+		theScanStatePtr->bufferPtr->b_flags |= (B_INVAL | B_AGE);
+		brelse(theScanStatePtr->bufferPtr);
 		theScanStatePtr->bufferPtr = NULL;
 		theScanStatePtr->currentNodePtr = NULL;
 	}
-	
+
 	myBTreeCBPtr = theScanStatePtr->btcb;
-			
+
 	// map logical block in catalog btree file to physical block on volume
-	myErr = VOP_BMAP( myBTreeCBPtr->fileRefNum, theScanStatePtr->nodeNum, 
-					  &myDevPtr, &myPhyBlockNum, &myBlockRun );
-	if ( myErr != E_NONE )
-	{
+	myErr = VOP_BMAP(myBTreeCBPtr->fileRefNum, theScanStatePtr->nodeNum, &myDevPtr, &myPhyBlockNum, &myBlockRun);
+	if (myErr != E_NONE) {
 		goto ExitThisRoutine;
 	}
 
-	// bmap block run gives us the remaining number of valid blocks (number of blocks 
+	// bmap block run gives us the remaining number of valid blocks (number of blocks
 	// minus the first).  so if there are 10 valid blocks our run number will be 9.
 	// blocks, in our case is the same as nodes (both are 4K)
-	myBlocksInBufferCount = (theScanStatePtr->bufferSize / myBTreeCBPtr->nodeSize );
+	myBlocksInBufferCount = (theScanStatePtr->bufferSize / myBTreeCBPtr->nodeSize);
 	myBufferSize = theScanStatePtr->bufferSize;
-	if ( (myBlockRun + 1) < myBlocksInBufferCount )
-	{
+	if ((myBlockRun + 1) < myBlocksInBufferCount) {
 		myBufferSize = (myBlockRun + 1) * myBTreeCBPtr->nodeSize;
 	}
-	
-	// now read blocks from the device 
-	myErr = bread( 	myDevPtr, 
-							myPhyBlockNum, 
-							myBufferSize,  
-							NOCRED, 
-							&theScanStatePtr->bufferPtr );
-	if ( myErr != E_NONE )
-	{
+
+	// now read blocks from the device
+	myErr = bread(myDevPtr, myPhyBlockNum, myBufferSize, NOCRED, &theScanStatePtr->bufferPtr);
+	if (myErr != E_NONE) {
 		goto ExitThisRoutine;
 	}
 
 	theScanStatePtr->nodesLeftInBuffer = theScanStatePtr->bufferPtr->b_bcount / theScanStatePtr->btcb->nodeSize;
-	theScanStatePtr->currentNodePtr = (BTNodeDescriptor *) theScanStatePtr->bufferPtr->b_data;
+	theScanStatePtr->currentNodePtr = (BTNodeDescriptor *)theScanStatePtr->bufferPtr->b_data;
 
 ExitThisRoutine:
 	return myErr;
-	
+
 } /* ReadMultipleNodes */
-
-
 
 //_________________________________________________________________________________
 //
@@ -304,47 +272,42 @@ ExitThisRoutine:
 //		XXX internal B-Tree structures.
 //_________________________________________________________________________________
 
-int		BTScanInitialize(	const FCB *		btreeFile,
-							u_int32_t		startingNode,
-							u_int32_t		startingRecord,
-							u_int32_t		recordsFound,
-							u_int32_t		bufferSize,
-							BTScanState	*	scanState     )
+int
+BTScanInitialize(const FCB *btreeFile, u_int32_t startingNode, u_int32_t startingRecord, u_int32_t recordsFound, u_int32_t bufferSize, BTScanState *scanState)
 {
-	BTreeControlBlock	*btcb;
-	
+	BTreeControlBlock *btcb;
+
 	//
 	//	Make sure this is a valid B-Tree file
 	//
-	btcb = (BTreeControlBlock *) btreeFile->fcbBTCBPtr;
+	btcb = (BTreeControlBlock *)btreeFile->fcbBTCBPtr;
 	if (btcb == NULL)
 		return fsBTInvalidFileErr;
-	
+
 	//
 	//	Make sure buffer size is big enough, and a multiple of the
 	//	B-Tree node size
 	//
-	if ( bufferSize < btcb->nodeSize )
+	if (bufferSize < btcb->nodeSize)
 		return paramErr;
 	bufferSize = (bufferSize / btcb->nodeSize) * btcb->nodeSize;
 
 	//
 	//	Set up the scanner's state
 	//
-	scanState->bufferSize			= bufferSize;
-	scanState->bufferPtr 			= NULL;
-	scanState->btcb					= btcb;
-	scanState->nodeNum				= startingNode;
-	scanState->recordNum			= startingRecord;
-	scanState->currentNodePtr		= NULL;
-	scanState->nodesLeftInBuffer	= 0;		// no nodes currently in buffer
-	scanState->recordsFound			= recordsFound;
-	scanState->startTime			= time;		// initialize our throttle
-		
-	return noErr;
-	
-} /* BTScanInitialize */
+	scanState->bufferSize = bufferSize;
+	scanState->bufferPtr = NULL;
+	scanState->btcb = btcb;
+	scanState->nodeNum = startingNode;
+	scanState->recordNum = startingRecord;
+	scanState->currentNodePtr = NULL;
+	scanState->nodesLeftInBuffer = 0; // no nodes currently in buffer
+	scanState->recordsFound = recordsFound;
+	scanState->startTime = time; // initialize our throttle
 
+	return noErr;
+
+} /* BTScanInitialize */
 
 //_________________________________________________________________________________
 //
@@ -362,25 +325,20 @@ int		BTScanInitialize(	const FCB *		btreeFile,
 //		recordsFound	Valid records seen so far (pass to BTScanInitialize)
 //_________________________________________________________________________________
 
-int	 BTScanTerminate(	BTScanState *		scanState,
-						u_int32_t *			startingNode,
-						u_int32_t *			startingRecord,
-						u_int32_t *			recordsFound	)
+int
+BTScanTerminate(BTScanState *scanState, u_int32_t *startingNode, u_int32_t *startingRecord, u_int32_t *recordsFound)
 {
-	*startingNode	= scanState->nodeNum;
-	*startingRecord	= scanState->recordNum;
-	*recordsFound	= scanState->recordsFound;
+	*startingNode = scanState->nodeNum;
+	*startingRecord = scanState->recordNum;
+	*recordsFound = scanState->recordsFound;
 
-	if ( scanState->bufferPtr != NULL )
-	{
+	if (scanState->bufferPtr != NULL) {
 		scanState->bufferPtr->b_flags |= (B_INVAL | B_AGE);
-		brelse( scanState->bufferPtr );
+		brelse(scanState->bufferPtr);
 		scanState->bufferPtr = NULL;
 		scanState->currentNodePtr = NULL;
 	}
-	
+
 	return noErr;
-	
+
 } /* BTScanTerminate */
-
-

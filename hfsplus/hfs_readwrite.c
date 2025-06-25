@@ -29,22 +29,19 @@
  */
 
 #include <sys/types.h>
-
-#include <sys/signalvar.h>
-
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/resourcevar.h>
-#include <sys/kernel.h>
-#include <sys/fcntl.h>
-#include <sys/stat.h>
 #include <sys/bio.h>
-#include <sys/filio.h>
 #include <sys/buf.h>
+#include <sys/fcntl.h>
+#include <sys/filio.h>
+#include <sys/kernel.h>
 #include <sys/proc.h>
+#include <sys/resourcevar.h>
 #include <sys/signalvar.h>
-#include <sys/vnode.h>
+#include <sys/stat.h>
 #include <sys/uio.h>
+#include <sys/vnode.h>
 
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
@@ -57,6 +54,7 @@
 
 #ifdef DARWIN_UBC
 #include <sys/ubc.h>
+
 #include <vm/vm_pageout.h>
 #endif
 
@@ -66,23 +64,21 @@
 
 #include <geom/geom.h>
 #include <geom/geom_vfs.h>
-
 #include <hfsplus/hfs.h>
-#include <hfsplus/hfs_endian.h>
-#include <hfsplus/hfs_quota.h>
-#include "hfscommon/headers/FileMgrInternal.h"
-#include "hfscommon/headers/BTreesInternal.h"
 #include <hfsplus/hfs_cnode.h>
 #include <hfsplus/hfs_dbg.h>
+#include <hfsplus/hfs_endian.h>
+#include <hfsplus/hfs_quota.h>
+
+#include "hfscommon/headers/BTreesInternal.h"
+#include "hfscommon/headers/FileMgrInternal.h"
 
 extern int overflow_extents(struct filefork *fp);
 
-#define can_cluster(size)                                                      \
-	((((size & (4096 - 1))) == 0) && (size <= (MAXPHYSIO / 2)))
+#define can_cluster(size) ((((size & (4096 - 1))) == 0) && (size <= (MAXPHYSIO / 2)))
 
 enum {
-	MAXHFSFILESIZE =
-	    0x7FFFFFFF /* this needs to go in the mount structure */
+	MAXHFSFILESIZE = 0x7FFFFFFF /* this needs to go in the mount structure */
 };
 
 extern u_int32_t GetLogicalBlockSize(struct vnode *vp);
@@ -104,8 +100,9 @@ extern u_int32_t GetLogicalBlockSize(struct vnode *vp);
 
      */
 
-int 
-hfs_read(struct vop_read_args *ap) {
+int
+hfs_read(struct vop_read_args *ap)
+{
 	/* struct vop_read_args {
 		struct vnode *a_vp;
 		struct uio *a_uio;
@@ -136,8 +133,7 @@ hfs_read(struct vop_read_args *ap) {
 	filesize = fp->ff_size;
 	// filebytes = (off_t)fp->ff_blocks * (off_t)VTOVCB(vp)->blockSize;
 	if (uio->uio_offset > filesize) {
-		if ((!ISHFSPLUS(VTOVCB(vp))) &&
-		    (uio->uio_offset > (off_t)MAXHFSFILESIZE))
+		if ((!ISHFSPLUS(VTOVCB(vp))) && (uio->uio_offset > (off_t)MAXHFSFILESIZE))
 			return (EFBIG);
 		else
 			return (0);
@@ -169,11 +165,9 @@ hfs_read(struct vop_read_args *ap) {
 		};
 
 		if ((uio->uio_offset + fragSize) >= filesize) {
-			retval = bread(vp, logBlockNo, ioxfersize,
-				       NOCRED, &bp);
+			retval = bread(vp, logBlockNo, ioxfersize, NOCRED, &bp);
 		} else {
-			retval = bread(vp, logBlockNo, ioxfersize,
-				       NOCRED, &bp);
+			retval = bread(vp, logBlockNo, ioxfersize, NOCRED, &bp);
 		};
 
 		if (retval != E_NONE) {
@@ -193,7 +187,7 @@ hfs_read(struct vop_read_args *ap) {
 		 */
 		ioxfersize -= bp->b_resid;
 
-		if (ioxfersize < moveSize) { 
+		if (ioxfersize < moveSize) {
 			/* XXX PPD This should take the offset into account, too! */
 			if (ioxfersize == 0)
 				break;
@@ -202,13 +196,10 @@ hfs_read(struct vop_read_args *ap) {
 		if ((startOffset + moveSize) > bp->b_bcount)
 			panic("hfs_read: bad startOffset or moveSize\n");
 
-		if ((retval = uiomove((caddr_t)bp->b_data + startOffset,
-				      (int)moveSize, uio)))
+		if ((retval = uiomove((caddr_t)bp->b_data + startOffset, (int)moveSize, uio)))
 			break;
 
-		if (S_ISREG(cp->c_mode) &&
-		    (((startOffset + moveSize) == fragSize) ||
-		     (uio->uio_offset == filesize))) {
+		if (S_ISREG(cp->c_mode) && (((startOffset + moveSize) == fragSize) || (uio->uio_offset == filesize))) {
 			bp->b_flags |= B_AGE;
 		};
 
@@ -237,8 +228,9 @@ hfs_read(struct vop_read_args *ap) {
      IN struct ucred *cred;
 
      */
-static int hfs_write(struct vop_write_args *ap) {
-
+static int
+hfs_write(struct vop_write_args *ap)
+{
 	/* struct vop_write_args {
 		struct vnode *a_vp;
 		struct uio *a_uio;
@@ -299,8 +291,7 @@ static int hfs_write(struct vop_write_args *ap) {
 		struct HFSPlusExtentDescriptor *extd;
 
 		extd = &cp->c_datafork->ff_data.cf_extents[0];
-		if (extd->startBlock == VTOVCB(vp)->vcbJinfoBlock ||
-		    extd->startBlock == VTOHFS(vp)->jnl_start) {
+		if (extd->startBlock == VTOVCB(vp)->vcbJinfoBlock || extd->startBlock == VTOHFS(vp)->jnl_start) {
 			return EPERM;
 		}
 	}
@@ -322,7 +313,7 @@ static int hfs_write(struct vop_write_args *ap) {
 		}
 		PROC_UNLOCK(p->td_proc);
 	}
-	p = current_proc();
+	p = curthread;
 
 #ifdef DARWIN
 	VOP_DEVBLOCKSIZE(cp->c_devvp, &devBlockSize);
@@ -352,9 +343,7 @@ static int hfs_write(struct vop_write_args *ap) {
 	 */
 	currOffset = qmin(uio->uio_offset, fp->ff_size);
 
-	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 0)) | DBG_FUNC_START,
-		     (int)uio->uio_offset, uio->uio_resid, (int)fp->ff_size,
-		     (int)filebytes, 0);
+	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 0)) | DBG_FUNC_START, (int)uio->uio_offset, uio->uio_resid, (int)fp->ff_size, (int)filebytes, 0);
 	retval = 0;
 
 	/* Now test if we need to extend the file */
@@ -364,9 +353,7 @@ static int hfs_write(struct vop_write_args *ap) {
 	if (writelimit > filebytes) {
 		bytesToAdd = writelimit - filebytes;
 
-		retval = hfs_chkdq(
-		    cp, (int64_t)(roundup(bytesToAdd, vcb->blockSize)),
-		    ap->a_cred, 0);
+		retval = hfs_chkdq(cp, (int64_t)(roundup(bytesToAdd, vcb->blockSize)), ap->a_cred, 0);
 		if (retval)
 			return (retval);
 	}
@@ -388,30 +375,24 @@ static int hfs_write(struct vop_write_args *ap) {
 #endif
 
 	while (writelimit > filebytes) {
-
 		bytesToAdd = writelimit - filebytes;
 		if (suser_cred(ap->a_cred, 0) != 0)
 			eflags |= kEFReserveMask;
 
 		/* lock extents b-tree (also protects volume bitmap) */
-		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-					     LK_EXCLUSIVE, current_proc());
+		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, curthread);
 		if (retval != E_NONE)
 			break;
 
-		retval = MacToVFSError(ExtendFileC(
-		    vcb, (FCB *)fp, bytesToAdd, 0, eflags, &actualBytesAdded));
+		retval = MacToVFSError(ExtendFileC(vcb, (FCB *)fp, bytesToAdd, 0, eflags, &actualBytesAdded));
 
-		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-					  LK_RELEASE, p);
+		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, p);
 		if ((actualBytesAdded == 0) && (retval == E_NONE))
 			retval = ENOSPC;
 		if (retval != E_NONE)
 			break;
 		filebytes = (off_t)fp->ff_blocks * (off_t)vcb->blockSize;
-		KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 0)) | DBG_FUNC_NONE,
-			     (int)uio->uio_offset, uio->uio_resid,
-			     (int)fp->ff_size, (int)filebytes, 0);
+		KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 0)) | DBG_FUNC_NONE, (int)uio->uio_offset, uio->uio_resid, (int)fp->ff_size, (int)filebytes, 0);
 	}
 
 #ifdef DARWIN_JOURNAL
@@ -453,9 +434,7 @@ static int hfs_write(struct vop_write_args *ap) {
 			   invalid and should be zero-filled as part of the
 			   transfer:
 			 */
-			if (rl_scan(&fp->ff_invalidranges, zero_off,
-				    uio->uio_offset - 1,
-				    &invalid_range) != RL_NOOVERLAP)
+			if (rl_scan(&fp->ff_invalidranges, zero_off, uio->uio_offset - 1, &invalid_range) != RL_NOOVERLAP)
 				lflag |= IO_HEADZEROFILL;
 		} else {
 			off_t eof_page_base = fp->ff_size & ~PAGE_MASK_64;
@@ -476,15 +455,11 @@ static int hfs_write(struct vop_write_args *ap) {
 			   in which case the zeroing will be handled by the
 			   cluser_write of the actual data.
 			 */
-			inval_start =
-			    (fp->ff_size + (PAGE_SIZE_64 - 1)) & ~PAGE_MASK_64;
+			inval_start = (fp->ff_size + (PAGE_SIZE_64 - 1)) & ~PAGE_MASK_64;
 			inval_end = uio->uio_offset & ~PAGE_MASK_64;
 			zero_off = fp->ff_size;
 
-			if ((fp->ff_size & PAGE_MASK_64) &&
-			    (rl_scan(&fp->ff_invalidranges, eof_page_base,
-				     fp->ff_size - 1,
-				     &invalid_range) != RL_NOOVERLAP)) {
+			if ((fp->ff_size & PAGE_MASK_64) && (rl_scan(&fp->ff_invalidranges, eof_page_base, fp->ff_size - 1, &invalid_range) != RL_NOOVERLAP)) {
 				/* The page containing the EOF is not valid, so
 				   the entire page must be made inaccessible
 				   now.  If the write starts on a page beyond
@@ -513,20 +488,15 @@ static int hfs_write(struct vop_write_args *ap) {
 					   Now's the last chance to zero-fill
 					   the page containing the EOF:
 					 */
-					retval = cluster_write(
-					    vp, (struct uio *)0, fp->ff_size,
-					    inval_start, zero_off, (off_t)0,
-					    devBlockSize,
-					    lflag | IO_HEADZEROFILL |
-						IO_NOZERODIRTY);
+					retval = cluster_write(vp, (struct uio *)0, fp->ff_size, inval_start, zero_off, (off_t)0, devBlockSize,
+					    lflag | IO_HEADZEROFILL | IO_NOZERODIRTY);
 					if (retval)
 						goto ioerr_exit;
 				};
 
 				/* Mark the remaining area of the newly
 				 * allocated space as invalid: */
-				rl_add(inval_start, inval_end - 1,
-				       &fp->ff_invalidranges);
+				rl_add(inval_start, inval_end - 1, &fp->ff_invalidranges);
 				cp->c_zftimeout = gettime() + ZFTIMELIMIT;
 				zero_off = fp->ff_size = inval_end;
 			};
@@ -543,9 +513,7 @@ static int hfs_write(struct vop_write_args *ap) {
 		if (tail_off > filesize)
 			tail_off = filesize;
 		if (tail_off > writelimit) {
-			if (rl_scan(&fp->ff_invalidranges, writelimit,
-				    tail_off - 1,
-				    &invalid_range) != RL_NOOVERLAP) {
+			if (rl_scan(&fp->ff_invalidranges, writelimit, tail_off - 1, &invalid_range) != RL_NOOVERLAP) {
 				lflag |= IO_TAILZEROFILL;
 			};
 		};
@@ -560,15 +528,12 @@ static int hfs_write(struct vop_write_args *ap) {
 		 * invalid now and must be made readable (removed from the
 		 * invalid ranges) before cluster_write tries to write it:
 		 */
-		io_start =
-		    (lflag & IO_HEADZEROFILL) ? zero_off : uio->uio_offset;
+		io_start = (lflag & IO_HEADZEROFILL) ? zero_off : uio->uio_offset;
 		io_end = (lflag & IO_TAILZEROFILL) ? tail_off : writelimit;
 		if (io_start < fp->ff_size) {
 			rl_remove(io_start, io_end - 1, &fp->ff_invalidranges);
 		};
-		retval = cluster_write(vp, uio, fp->ff_size, filesize, zero_off,
-				       tail_off, devBlockSize,
-				       lflag | IO_NOZERODIRTY);
+		retval = cluster_write(vp, uio, fp->ff_size, filesize, zero_off, tail_off, devBlockSize, lflag | IO_NOZERODIRTY);
 
 		if (uio->uio_offset > fp->ff_size) {
 			fp->ff_size = uio->uio_offset;
@@ -584,8 +549,7 @@ static int hfs_write(struct vop_write_args *ap) {
 			blkoffset = currOffset % logBlockSize;
 
 			if ((filebytes - currOffset) < logBlockSize)
-				fragSize = filebytes -
-					   ((off_t)logBlockNo * logBlockSize);
+				fragSize = filebytes - ((off_t)logBlockNo * logBlockSize);
 			else
 				fragSize = logBlockSize;
 			xfersize = fragSize - blkoffset;
@@ -611,11 +575,8 @@ static int hfs_write(struct vop_write_args *ap) {
 					break;
 				}
 			} else {
-
-				if (currOffset == fp->ff_size &&
-				    blkoffset == 0) {
-					bp = _GETBLK(vp, logBlockNo, fragSize,
-						     0, 0);
+				if (currOffset == fp->ff_size && blkoffset == 0) {
+					bp = _GETBLK(vp, logBlockNo, fragSize, 0, 0);
 					retval = 0;
 					if (bp->b_blkno == -1) {
 						brelse(bp);
@@ -628,8 +589,7 @@ static int hfs_write(struct vop_write_args *ap) {
 					 * aligned, so read the affected block
 					 * into a buffer:
 					 */
-					retval = bread(vp, logBlockNo, fragSize,
-						       ap->a_cred, &bp);
+					retval = bread(vp, logBlockNo, fragSize, ap->a_cred, &bp);
 					if (retval != E_NONE) {
 						if (bp)
 							brelse(bp);
@@ -647,8 +607,7 @@ static int hfs_write(struct vop_write_args *ap) {
 			 * uio_offset > LEOF...
 			 */
 			if (uio->uio_offset > currOffset) {
-				clearSize = qmin(uio->uio_offset - currOffset,
-						 xfersize);
+				clearSize = qmin(uio->uio_offset - currOffset, xfersize);
 				bzero(bp->b_data + blkoffset, clearSize);
 				currOffset += clearSize;
 				blkoffset += clearSize;
@@ -656,14 +615,12 @@ static int hfs_write(struct vop_write_args *ap) {
 			}
 
 			if (xfersize > 0) {
-				retval =
-				    uiomove((caddr_t)bp->b_data + blkoffset,
-					    (int)xfersize, uio);
+				retval = uiomove((caddr_t)bp->b_data + blkoffset, (int)xfersize, uio);
 				currOffset += xfersize;
 			}
 
 			if (ioflag & IO_SYNC) {
-				(void)VOP_BWRITE(bp);
+				(void)bwrite(bp);
 			} else if ((xfersize + blkoffset) == fragSize) {
 				bp->b_flags |= B_AGE;
 				bawrite(bp);
@@ -679,9 +636,7 @@ static int hfs_write(struct vop_write_args *ap) {
 				fp->ff_size = currOffset;
 #ifdef DARWIN_UBC
 				if (UBCISVALID(vp))
-					ubc_setsize(
-					    vp,
-					    fp->ff_size); /* XXX check errors */
+					ubc_setsize(vp, fp->ff_size); /* XXX check errors */
 #else
 			vnode_pager_setsize(vp, fp->ff_size);
 #endif
@@ -705,21 +660,17 @@ ioerr_exit:
 
 	if (retval) {
 		if (ioflag & IO_UNIT) {
-			(void)VOP_TRUNCATE(vp, origFileSize, ioflag & IO_SYNC,
-					   ap->a_cred, uio->uio_td);
+			(void)hfs_truncate(vp, origFileSize, ioflag & IO_SYNC, ap->a_cred, uio->uio_td);
 			uio->uio_offset -= resid - uio->uio_resid;
 			uio->uio_resid = resid;
-			filebytes =
-			    (off_t)fp->ff_blocks * (off_t)vcb->blockSize;
+			filebytes = (off_t)fp->ff_blocks * (off_t)vcb->blockSize;
 		}
 	} else if (resid > uio->uio_resid && (ioflag & IO_SYNC)) {
 		getmicrotime(&tv);
-		retval = VOP_UPDATE(vp, &tv, &tv, 1);
+		retval = hfs_update(vp, &tv, &tv, 1);
 	}
 
-	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 0)) | DBG_FUNC_END,
-		     (int)uio->uio_offset, uio->uio_resid, (int)fp->ff_size,
-		     (int)filebytes, 0);
+	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 0)) | DBG_FUNC_END, (int)uio->uio_offset, uio->uio_resid, (int)fp->ff_size, (int)filebytes, 0);
 
 	return (retval);
 }
@@ -739,17 +690,17 @@ ioerr_exit:
      */
 
 /* ARGSUSED */
-int 
+int
 hfs_ioctl(struct vop_ioctl_args *ap)
 {
-	 /* {
-		struct vnode *a_vp;
-		int  a_command;
-		caddr_t  a_data;
-		int  a_fflag;
-		struct ucred *a_cred;
-		struct proc *a_p;
-	} */ 	
+	/* {
+	       struct vnode *a_vp;
+	       int  a_command;
+	       caddr_t  a_data;
+	       int  a_fflag;
+	       struct ucred *a_cred;
+	       struct proc *a_p;
+       } */
 	printf("[hfs_ioctl] command: %lu\n", ap->a_command);
 	printf("FIOSEEKDATA: %lu | FIOSEEKHOLE: %lu\n", FIOSEEKDATA, FIOSEEKHOLE);
 	return 45;
@@ -757,7 +708,8 @@ hfs_ioctl(struct vop_ioctl_args *ap)
 
 #ifdef DARWIN
 /* ARGSUSED */
-int hfs_select(ap)
+int
+hfs_select(ap)
 struct vop_select_args /* {
 	struct vnode *a_vp;
 	int  a_which;
@@ -803,7 +755,9 @@ struct vop_select_args /* {
  * the REMAINING amount of blocks
  */
 
-int hfs_bmap(struct vop_bmap_args *ap) {
+int
+hfs_bmap(struct vop_bmap_args *ap)
+{
 	/* struct vop_bmap_args {
 		struct vnode *a_vp;
 		daddr_t a_bn;
@@ -830,11 +784,11 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 	 * Check for underlying vnode requests and ensure that logical
 	 * to physical mapping is requested.
 	 */
-	
+
 	// This might not be required... It also required changing...
 	if (ap->a_vp == NULL)
 		ap->a_vp = cp->c_devvp;
-	
+
 	if (ap->a_bnp == NULL)
 		return (0);
 
@@ -846,68 +800,52 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 
 	lockExtBtree = overflow_extents(fp);
 	if (lockExtBtree) {
-		p = current_proc();
-		retval = hfs_metafilelocking(hfsmp, kHFSExtentsFileID,
-					     LK_EXCLUSIVE | LK_CANRECURSE, p);
+		p = curthread;
+		retval = hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_EXCLUSIVE | LK_CANRECURSE, p);
 		if (retval)
 			return (retval);
 	}
 
 	retval = MacToVFSError(MapFileBlockC(HFSTOVCB(hfsmp), (FCB *)fp, MAXPHYSIO, blockposition, ap->a_bnp, &bytesContAvail));
-	
+
 	if (lockExtBtree) {
 		(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
 	}
-	
+
 	if (retval == E_NONE) {
 		/* Adjust the mapping information for invalid file ranges: */
-		overlaptype = rl_scan(&fp->ff_invalidranges, 
-				blockposition,
-				blockposition + MAXPHYSIO - 1, 
-				&invalid_range);
+		overlaptype = rl_scan(&fp->ff_invalidranges, blockposition, blockposition + MAXPHYSIO - 1, &invalid_range);
 
 		if (overlaptype != RL_NOOVERLAP) {
 			switch (overlaptype) {
-				case RL_MATCHINGOVERLAP:
-				case RL_OVERLAPCONTAINSRANGE:
-				case RL_OVERLAPSTARTSBEFORE:
-					/* There's no valid block for this byte
-					 * offset: */
+			case RL_MATCHINGOVERLAP:
+			case RL_OVERLAPCONTAINSRANGE:
+			case RL_OVERLAPSTARTSBEFORE:
+				/* There's no valid block for this byte
+				 * offset: */
 
+				*ap->a_bnp = (daddr_t)-1;
+				bytesContAvail = invalid_range->rl_end + 1 - blockposition;
+				break;
+
+			case RL_OVERLAPISCONTAINED:
+			case RL_OVERLAPENDSAFTER:
+				/* The range of interest hits an invalid
+				 * block before the end: */
+				if (invalid_range->rl_start == blockposition) {
+					/* There's actually no valid
+					 * information to be had
+					 * starting here: */
 					*ap->a_bnp = (daddr_t)-1;
-					bytesContAvail = invalid_range->rl_end +
-							 1 - blockposition;
-					break;
-
-				case RL_OVERLAPISCONTAINED:
-				case RL_OVERLAPENDSAFTER:
-					/* The range of interest hits an invalid
-					 * block before the end: */
-					if (invalid_range->rl_start ==
-					    blockposition) {
-						/* There's actually no valid
-						 * information to be had
-						 * starting here: */
-						*ap->a_bnp = (daddr_t)-1;
-						if ((fp->ff_size >
-						     (invalid_range->rl_end +
-						      1)) &&
-						    (invalid_range->rl_end + 1 -
-							 blockposition <
-						     bytesContAvail)) {
-							bytesContAvail =
-							    invalid_range
-								->rl_end +
-							    1 - blockposition;
-						};
-					} else {
-						bytesContAvail =
-						    invalid_range->rl_start -
-						    blockposition;
+					if ((fp->ff_size > (invalid_range->rl_end + 1)) && (invalid_range->rl_end + 1 - blockposition < bytesContAvail)) {
+						bytesContAvail = invalid_range->rl_end + 1 - blockposition;
 					};
-					break;
-				default:
-					break;
+				} else {
+					bytesContAvail = invalid_range->rl_start - blockposition;
+				};
+				break;
+			default:
+				break;
 			};
 			if (bytesContAvail > MAXPHYSIO)
 				bytesContAvail = MAXPHYSIO;
@@ -917,10 +855,7 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 		if (ap->a_runp != NULL) {
 			if (can_cluster(logBlockSize)) {
 				/* Make sure this result never goes negative: */
-				*ap->a_runp =
-				    (bytesContAvail < logBlockSize)
-					? 0
-					: (bytesContAvail / logBlockSize) - 1;
+				*ap->a_runp = (bytesContAvail < logBlockSize) ? 0 : (bytesContAvail / logBlockSize) - 1;
 			} else {
 				*ap->a_runp = 0;
 			};
@@ -937,7 +872,8 @@ int hfs_bmap(struct vop_bmap_args *ap) {
 #ifdef DARWIN
 /* blktooff converts logical block number to file offset */
 
-int hfs_blktooff(ap)
+int
+hfs_blktooff(ap)
 struct vop_blktooff_args /* {
 	struct vnode *a_vp;
 	daddr_t a_lblkno;
@@ -951,7 +887,8 @@ struct vop_blktooff_args /* {
 	return (0);
 }
 
-int hfs_offtoblk(ap)
+int
+hfs_offtoblk(ap)
 struct vop_offtoblk_args /* {
 	struct vnode *a_vp;
 	off_t a_offset;
@@ -965,7 +902,8 @@ struct vop_offtoblk_args /* {
 	return (0);
 }
 
-int hfs_cmap(ap)
+int
+hfs_cmap(ap)
 struct vop_cmap_args /* {
 	struct vnode *a_vp;
 	off_t a_foffset;
@@ -994,7 +932,7 @@ struct vop_cmap_args /* {
 	if (ap->a_bpn == NULL)
 		return (0);
 
-	p = current_proc();
+	p = curthread;
 #ifdef DARWIN_JOURNAL
 retry:
 #endif
@@ -1016,9 +954,7 @@ retry:
 		}
 #endif
 
-		if (retval =
-			hfs_metafilelocking(hfsmp, kHFSExtentsFileID,
-					    LK_EXCLUSIVE | LK_CANRECURSE, p)) {
+		if (retval = hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_EXCLUSIVE | LK_CANRECURSE, p)) {
 #ifdef DARWIN_JOURNAL
 			if (started_tr) {
 				journal_end_transaction(hfsmp->jnl);
@@ -1031,9 +967,7 @@ retry:
 		}
 	} else if (overflow_extents(fp)) {
 		lockExtBtree = 1;
-		if (retval =
-			hfs_metafilelocking(hfsmp, kHFSExtentsFileID,
-					    LK_EXCLUSIVE | LK_CANRECURSE, p)) {
+		if (retval = hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_EXCLUSIVE | LK_CANRECURSE, p)) {
 			return retval;
 		}
 	}
@@ -1054,8 +988,7 @@ retry:
 		//
 		if (hfsmp->jnl && started_tr == 0) {
 			if (lockExtBtree) {
-				(void)hfs_metafilelocking(
-				    hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
+				(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
 				lockExtBtree = 0;
 			}
 
@@ -1063,8 +996,7 @@ retry:
 		}
 #endif /* DARWIN_JOURNAL */
 
-		reqbytes = (SInt64)fp->ff_unallocblocks *
-			   (SInt64)HFSTOVCB(hfsmp)->blockSize;
+		reqbytes = (SInt64)fp->ff_unallocblocks * (SInt64)HFSTOVCB(hfsmp)->blockSize;
 		/*
 		 * Release the blocks on loan and aquire some real ones.
 		 * Note that we can race someone else for these blocks
@@ -1079,17 +1011,13 @@ retry:
 		fp->ff_unallocblocks = 0;
 
 		while (retval == 0 && reqbytes > 0) {
-			retval = MacToVFSError(ExtendFileC(
-			    HFSTOVCB(hfsmp), (FCB *)fp, reqbytes, 0,
-			    kEFAllMask | kEFNoClumpMask, &actbytes));
+			retval = MacToVFSError(ExtendFileC(HFSTOVCB(hfsmp), (FCB *)fp, reqbytes, 0, kEFAllMask | kEFNoClumpMask, &actbytes));
 			if (retval == 0 && actbytes == 0)
 				retval = ENOSPC;
 
 			if (retval) {
-				fp->ff_unallocblocks =
-				    reqbytes / HFSTOVCB(hfsmp)->blockSize;
-				HFSTOVCB(hfsmp)->loanedBlocks +=
-				    fp->ff_unallocblocks;
+				fp->ff_unallocblocks = reqbytes / HFSTOVCB(hfsmp)->blockSize;
+				HFSTOVCB(hfsmp)->loanedBlocks += fp->ff_unallocblocks;
 				FTOC(fp)->c_blocks += fp->ff_unallocblocks;
 				fp->ff_blocks += fp->ff_unallocblocks;
 			}
@@ -1097,8 +1025,7 @@ retry:
 		}
 
 		if (retval) {
-			(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID,
-						  LK_RELEASE, p);
+			(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
 #ifdef DARWIN_JOURNAL
 			if (started_tr) {
 				hfs_flushvolumeheader(hfsmp, MNT_NOWAIT, 0);
@@ -1113,13 +1040,10 @@ retry:
 		VTOC(ap->a_vp)->c_flag |= C_MODIFIED;
 	}
 
-	retval = MacToVFSError(MapFileBlockC(HFSTOVCB(hfsmp), (FCB *)fp,
-					     ap->a_size, ap->a_foffset,
-					     ap->a_bpn, &bytesContAvail));
+	retval = MacToVFSError(MapFileBlockC(HFSTOVCB(hfsmp), (FCB *)fp, ap->a_size, ap->a_foffset, ap->a_bpn, &bytesContAvail));
 
 	if (lockExtBtree)
-		(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE,
-					  p);
+		(void)hfs_metafilelocking(hfsmp, kHFSExtentsFileID, LK_RELEASE, p);
 
 #ifdef DARWIN_JOURNAL
 	// XXXdbg
@@ -1136,63 +1060,44 @@ retry:
 
 	if (retval == E_NONE) {
 		/* Adjust the mapping information for invalid file ranges: */
-		overlaptype = rl_scan(&fp->ff_invalidranges, ap->a_foffset,
-				      ap->a_foffset + (off_t)bytesContAvail - 1,
-				      &invalid_range);
+		overlaptype = rl_scan(&fp->ff_invalidranges, ap->a_foffset, ap->a_foffset + (off_t)bytesContAvail - 1, &invalid_range);
 		if (overlaptype != RL_NOOVERLAP) {
 			switch (overlaptype) {
-				case RL_MATCHINGOVERLAP:
-				case RL_OVERLAPCONTAINSRANGE:
-				case RL_OVERLAPSTARTSBEFORE:
-					/* There's no valid block for this byte
-					 * offset: */
+			case RL_MATCHINGOVERLAP:
+			case RL_OVERLAPCONTAINSRANGE:
+			case RL_OVERLAPSTARTSBEFORE:
+				/* There's no valid block for this byte
+				 * offset: */
+				*ap->a_bpn = (daddr_t)-1;
+
+				/* There's no point limiting the amount
+				   to be returned if the invalid range
+				   that was hit extends all the way to
+				   the EOF (i.e. there's no valid bytes
+				   between the end of this range and the
+				   file's EOF):
+				 */
+				if ((fp->ff_size > (invalid_range->rl_end + 1)) && (invalid_range->rl_end + 1 - ap->a_foffset < bytesContAvail)) {
+					bytesContAvail = invalid_range->rl_end + 1 - ap->a_foffset;
+				};
+				break;
+
+			case RL_OVERLAPISCONTAINED:
+			case RL_OVERLAPENDSAFTER:
+				/* The range of interest hits an invalid
+				 * block before the end: */
+				if (invalid_range->rl_start == ap->a_foffset) {
+					/* There's actually no valid
+					 * information to be had
+					 * starting here: */
 					*ap->a_bpn = (daddr_t)-1;
-
-					/* There's no point limiting the amount
-					   to be returned if the invalid range
-					   that was hit extends all the way to
-					   the EOF (i.e. there's no valid bytes
-					   between the end of this range and the
-					   file's EOF):
-					 */
-					if ((fp->ff_size >
-					     (invalid_range->rl_end + 1)) &&
-					    (invalid_range->rl_end + 1 -
-						 ap->a_foffset <
-					     bytesContAvail)) {
-						bytesContAvail =
-						    invalid_range->rl_end + 1 -
-						    ap->a_foffset;
+					if ((fp->ff_size > (invalid_range->rl_end + 1)) && (invalid_range->rl_end + 1 - ap->a_foffset < bytesContAvail)) {
+						bytesContAvail = invalid_range->rl_end + 1 - ap->a_foffset;
 					};
-					break;
-
-				case RL_OVERLAPISCONTAINED:
-				case RL_OVERLAPENDSAFTER:
-					/* The range of interest hits an invalid
-					 * block before the end: */
-					if (invalid_range->rl_start ==
-					    ap->a_foffset) {
-						/* There's actually no valid
-						 * information to be had
-						 * starting here: */
-						*ap->a_bpn = (daddr_t)-1;
-						if ((fp->ff_size >
-						     (invalid_range->rl_end +
-						      1)) &&
-						    (invalid_range->rl_end + 1 -
-							 ap->a_foffset <
-						     bytesContAvail)) {
-							bytesContAvail =
-							    invalid_range
-								->rl_end +
-							    1 - ap->a_foffset;
-						};
-					} else {
-						bytesContAvail =
-						    invalid_range->rl_start -
-						    ap->a_foffset;
-					};
-					break;
+				} else {
+					bytesContAvail = invalid_range->rl_start - ap->a_foffset;
+				};
+				break;
 			};
 			if (bytesContAvail > ap->a_size)
 				bytesContAvail = ap->a_size;
@@ -1218,7 +1123,9 @@ retry:
  * contiguous.  But since this routine should rarely be called, and that
  * would be more complicated; best to keep it simple.
  */
-static int hfs_strategy_fragmented(struct buf *bp) {
+static int
+hfs_strategy_fragmented(struct buf *bp)
+{
 	register struct vnode *vp = bp->b_vp;
 	register struct cnode *cp = VTOC(vp);
 	register struct vnode *devvp = cp->c_devvp;
@@ -1241,15 +1148,12 @@ static int hfs_strategy_fragmented(struct buf *bp) {
 	if (ISSET(bp->b_flags, B_READ))
 		SET(frag->b_flags, B_READ);
 
-	for (ioaddr = bp->b_data, remaining = bp->b_bcount; remaining != 0;
-	     ioaddr += block_size, offset += block_size,
-	    remaining -= block_size) {
+	for (ioaddr = bp->b_data, remaining = bp->b_bcount; remaining != 0; ioaddr += block_size, offset += block_size, remaining -= block_size) {
 		frag->b_resid = frag->b_bcount;
 		CLR(frag->b_flags, B_DONE);
 
 		/* Map the current position to a physical block number */
-		retval = VOP_CMAP(vp, offset, block_size, &frag->b_lblkno, NULL,
-				  NULL);
+		retval = VOP_CMAP(vp, offset, block_size, &frag->b_lblkno, NULL, NULL);
 		if (retval != 0)
 			break;
 
@@ -1307,7 +1211,9 @@ static int hfs_strategy_fragmented(struct buf *bp) {
 #vop_strategy {
 #	IN struct buf *bp;
     */
-int hfs_strategy(struct vop_strategy_args *ap) {
+int
+hfs_strategy(struct vop_strategy_args *ap)
+{
 	/* {
 		struct buf   *a_bp;
 		struct vnode *a_vp;
@@ -1331,8 +1237,7 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 	 * filling) may create such a situation.
 	 */
 	if (bp->b_blkno == bp->b_lblkno) {
-		if ((retval = VOP_BMAP(vp, bp->b_lblkno, NULL, &bp->b_blkno,
-				       NULL, NULL))) {
+		if ((retval = VOP_BMAP(vp, bp->b_lblkno, NULL, &bp->b_blkno, NULL, NULL))) {
 			bp->b_error = retval;
 			bp->b_ioflags |= BIO_ERROR;
 			bufdone(bp);
@@ -1353,8 +1258,9 @@ int hfs_strategy(struct vop_strategy_args *ap) {
 	return (0);
 }
 
-
-int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, struct thread *td) {
+int
+hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, struct thread *td)
+{
 	register struct cnode *cp = VTOC(vp);
 	struct filefork *fp = VTOF(vp);
 	struct timeval tv;
@@ -1376,15 +1282,13 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 	fileblocks = fp->ff_blocks;
 	filebytes = (off_t)fileblocks * (off_t)blksize;
 
-	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_START, (int)length,
-		     (int)fp->ff_size, (int)filebytes, 0, 0);
+	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_START, (int)length, (int)fp->ff_size, (int)filebytes, 0, 0);
 
 	if (length < 0)
 		return (EINVAL);
 
 	if ((!ISHFSPLUS(VTOVCB(vp))) && (length > (off_t)MAXHFSFILESIZE))
 		return (EFBIG);
-
 
 	getmicrotime(&tv);
 	retval = E_NONE;
@@ -1405,9 +1309,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 	 */
 	if (length > fp->ff_size) {
 #if QUOTA
-		retval = hfs_chkdq(
-		    cp, (int64_t)(roundup(length - filebytes, blksize)), cred,
-		    0);
+		retval = hfs_chkdq(cp, (int64_t)(roundup(length - filebytes, blksize)), cred, 0);
 		if (retval)
 			goto Err_Exit;
 #endif /* QUOTA */
@@ -1428,8 +1330,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 			// XXXdbg
 			hfs_global_shared_lock_acquire(hfsmp);
 			if (hfsmp->jnl) {
-				if (journal_start_transaction(hfsmp->jnl) !=
-				    0) {
+				if (journal_start_transaction(hfsmp->jnl) != 0) {
 					retval = EINVAL;
 					goto Err_Exit;
 				}
@@ -1437,8 +1338,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 #endif
 
 			/* lock extents b-tree (also protects volume bitmap) */
-			retval = hfs_metafilelocking(
-			    VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, p);
+			retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, p);
 			if (retval) {
 #ifdef DARWIN_JOURNAL
 				if (hfsmp->jnl) {
@@ -1452,12 +1352,9 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 
 			while ((length > filebytes) && (retval == E_NONE)) {
 				bytesToAdd = length - filebytes;
-				retval = MacToVFSError(ExtendFileC(
-				    VTOVCB(vp), (FCB *)fp, bytesToAdd, 0,
-				    eflags, &actualBytesAdded));
+				retval = MacToVFSError(ExtendFileC(VTOVCB(vp), (FCB *)fp, bytesToAdd, 0, eflags, &actualBytesAdded));
 
-				filebytes =
-				    (off_t)fp->ff_blocks * (off_t)blksize;
+				filebytes = (off_t)fp->ff_blocks * (off_t)blksize;
 				if (actualBytesAdded == 0 && retval == E_NONE) {
 					if (length > filebytes)
 						length = filebytes;
@@ -1465,8 +1362,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 				}
 			} /* endwhile */
 
-			(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-						  LK_RELEASE, p);
+			(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, p);
 
 #ifdef DARWIN_JOURNAL
 			// XXXdbg
@@ -1480,9 +1376,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 			if (retval)
 				goto Err_Exit;
 
-			KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_NONE,
-				     (int)length, (int)fp->ff_size,
-				     (int)filebytes, 0, 0);
+			KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_NONE, (int)length, (int)fp->ff_size, (int)filebytes, 0, 0);
 		}
 
 #ifdef DARWIN /* ... and UBC as well in one cut */
@@ -1492,9 +1386,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 				int devBlockSize;
 				off_t zero_limit;
 
-				zero_limit =
-				    (fp->ff_size + (PAGE_SIZE_64 - 1)) &
-				    ~PAGE_MASK_64;
+				zero_limit = (fp->ff_size + (PAGE_SIZE_64 - 1)) & ~PAGE_MASK_64;
 				if (length < zero_limit)
 					zero_limit = length;
 
@@ -1502,13 +1394,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 					/* Extending the file: time to fill out
 					 * the current last page w. zeroes? */
 					if ((fp->ff_size & PAGE_MASK_64) &&
-					    (rl_scan(&fp->ff_invalidranges,
-						     fp->ff_size &
-							 ~PAGE_MASK_64,
-						     fp->ff_size - 1,
-						     &invalid_range) ==
-					     RL_NOOVERLAP)) {
-
+					    (rl_scan(&fp->ff_invalidranges, fp->ff_size & ~PAGE_MASK_64, fp->ff_size - 1, &invalid_range) == RL_NOOVERLAP)) {
 						/* There's some valid data at
 						   the start of the (current)
 						   last page of the file, so
@@ -1522,16 +1408,9 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 						   the invalid range list before
 						   calling cluster_write():
 						 */
-						VOP_DEVBLOCKSIZE(cp->c_devvp,
-								 &devBlockSize);
-						retval = cluster_write(
-						    vp, (struct uio *)0,
-						    fp->ff_size, zero_limit,
-						    fp->ff_size, (off_t)0,
-						    devBlockSize,
-						    (ap->a_flags & IO_SYNC) |
-							IO_HEADZEROFILL |
-							IO_NOZERODIRTY);
+						VOP_DEVBLOCKSIZE(cp->c_devvp, &devBlockSize);
+						retval = cluster_write(vp, (struct uio *)0, fp->ff_size, zero_limit, fp->ff_size, (off_t)0, devBlockSize,
+						    (ap->a_flags & IO_SYNC) | IO_HEADZEROFILL | IO_NOZERODIRTY);
 						if (retval)
 							goto Err_Exit;
 
@@ -1539,13 +1418,8 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 						 * remaining area, if necessary:
 						 */
 						if (length > zero_limit) {
-							rl_add(
-							    zero_limit,
-							    length - 1,
-							    &fp->ff_invalidranges);
-							cp->c_zftimeout =
-							    gettime() +
-							    ZFTIMELIMIT;
+							rl_add(zero_limit, length - 1, &fp->ff_invalidranges);
+							cp->c_zftimeout = gettime() + ZFTIMELIMIT;
 						}
 					} else {
 						/* The page containing the
@@ -1555,10 +1429,8 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 						   along with the area being
 						   newly allocated:
 						 */
-						rl_add(fp->ff_size, length - 1,
-						       &fp->ff_invalidranges);
-						cp->c_zftimeout =
-						    gettime() + ZFTIMELIMIT;
+						rl_add(fp->ff_size, length - 1, &fp->ff_invalidranges);
+						cp->c_zftimeout = gettime() + ZFTIMELIMIT;
 					};
 				}
 			} else {
@@ -1578,15 +1450,12 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 			while (bytestoclear > 0) {
 				lblkno = filepos / lblksize;
 				blkoff = filepos % lblksize;
-				blkzeros =
-				    qmin(bytestoclear, lblksize - blkoff);
+				blkzeros = qmin(bytestoclear, lblksize - blkoff);
 
 				if (blkoff == 0 && bytestoclear >= lblksize) {
-					bp =
-					    _GETBLK(vp, lblkno, lblksize, 0, 0);
+					bp = _GETBLK(vp, lblkno, lblksize, 0, 0);
 				} else {
-					retval = bread(vp, lblkno, lblksize,
-						       cred, &bp);
+					retval = bread(vp, lblkno, lblksize, cred, &bp);
 					if (retval) {
 						brelse(bp);
 						goto Err_Exit;
@@ -1627,8 +1496,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 				ubc_setsize(vp, length); /* XXX check errors */
 
 			vflags = ((length > 0) ? V_SAVE : 0) | V_SAVEMETA;
-			retval =
-			    vinvalbuf(vp, vflags, ap->a_cred, ap->a_p, 0, 0);
+			retval = vinvalbuf(vp, vflags, ap->a_cred, ap->a_p, 0, 0);
 #else /* FreeBSD has a better way */
 			/*
 			 * Logical block size is used since vtruncbuf() operates
@@ -1640,8 +1508,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 
 			/* Any space previously marked as invalid is now
 			 * irrelevant: */
-			rl_remove(length, fp->ff_size - 1,
-				  &fp->ff_invalidranges);
+			rl_remove(length, fp->ff_size - 1, &fp->ff_invalidranges);
 		}
 
 		/*
@@ -1652,8 +1519,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 			u_int32_t finalblks;
 
 			/* lock extents b-tree */
-			retval = hfs_metafilelocking(
-			    VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, p);
+			retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, p);
 			if (retval)
 				goto Err_Exit;
 
@@ -1665,15 +1531,12 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 			finalblks = (length + blksize - 1) / blksize;
 			if (finalblks > fp->ff_blocks) {
 				/* calculate required unmapped blocks */
-				fp->ff_unallocblocks =
-				    finalblks - fp->ff_blocks;
-				VTOVCB(vp)->loanedBlocks +=
-				    fp->ff_unallocblocks;
+				fp->ff_unallocblocks = finalblks - fp->ff_blocks;
+				VTOVCB(vp)->loanedBlocks += fp->ff_unallocblocks;
 				cp->c_blocks += fp->ff_unallocblocks;
 				fp->ff_blocks += fp->ff_unallocblocks;
 			}
-			(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-						  LK_RELEASE, p);
+			(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, p);
 		}
 
 		/*
@@ -1683,21 +1546,18 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 		 * isn't set, we make sure this isn't a TBE process.
 		 */
 #ifdef DARWIN
-		if ((ap->a_flags & IO_NDELAY) ||
-		    (!ISSET(ap->a_p->p_flag, P_TBE))) {
+		if ((ap->a_flags & IO_NDELAY) || (!ISSET(ap->a_p->p_flag, P_TBE))) {
 #else
 		if ((flags & IO_NDELAY)) {
 #endif
 #if QUOTA
-			off_t savedbytes =
-			    ((off_t)fp->ff_blocks * (off_t)blksize);
+			off_t savedbytes = ((off_t)fp->ff_blocks * (off_t)blksize);
 #endif /* QUOTA */
 #ifdef DARWIN_JOURNAL
 			// XXXdbg
 			hfs_global_shared_lock_acquire(hfsmp);
 			if (hfsmp->jnl) {
-				if (journal_start_transaction(hfsmp->jnl) !=
-				    0) {
+				if (journal_start_transaction(hfsmp->jnl) != 0) {
 					retval = EINVAL;
 					goto Err_Exit;
 				}
@@ -1705,8 +1565,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 #endif
 
 			/* lock extents b-tree (also protects volume bitmap) */
-			retval = hfs_metafilelocking(
-			    VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, p);
+			retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, p);
 			if (retval) {
 #ifdef DARWIN_JOURNAL
 				if (hfsmp->jnl) {
@@ -1718,11 +1577,9 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 			}
 
 			if (fp->ff_unallocblocks == 0)
-				retval = MacToVFSError(TruncateFileC(
-				    VTOVCB(vp), (FCB *)fp, length, false));
+				retval = MacToVFSError(TruncateFileC(VTOVCB(vp), (FCB *)fp, length, false));
 
-			(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-						  LK_RELEASE, p);
+			(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, p);
 
 #ifdef DARWIN_JOURNAL
 			// XXXdbg
@@ -1738,8 +1595,7 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 				goto Err_Exit;
 #if QUOTA
 			/* These are bytesreleased */
-			(void)hfs_chkdq(cp, (int64_t)-(savedbytes - filebytes),
-					NOCRED, 0);
+			(void)hfs_chkdq(cp, (int64_t)-(savedbytes - filebytes), NOCRED, 0);
 #endif /* QUOTA */
 		}
 		/* Only set update flag if the logical length changes */
@@ -1748,16 +1604,14 @@ int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, 
 		fp->ff_size = length;
 	}
 	cp->c_flag |= C_CHANGE;
-	retval = VOP_UPDATE(vp, &tv, &tv, MNT_WAIT);
+	retval = hfs_update(vp, &tv, &tv, MNT_WAIT);
 	if (retval) {
-		KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_NONE, -1, -1,
-			     -1, retval, 0);
+		KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_NONE, -1, -1, -1, retval, 0);
 	}
 
 Err_Exit:
 
-	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_END, (int)length,
-		     (int)fp->ff_size, (int)filebytes, retval, 0);
+	KERNEL_DEBUG((FSDBG_CODE(DBG_FSRW, 7)) | DBG_FUNC_END, (int)length, (int)fp->ff_size, (int)filebytes, retval, 0);
 
 	return (retval);
 }
@@ -1778,7 +1632,8 @@ vop_allocate {
 };
  * allocate a cnode to at most length size
  */
-int hfs_allocate(ap)
+int
+hfs_allocate(ap)
 struct vop_allocate_args /* {
 	struct vnode *a_vp;
 	off_t a_length;
@@ -1852,10 +1707,7 @@ struct vop_allocate_args /* {
 		moreBytesRequested = length - filebytes;
 
 #if QUOTA
-		retval = hfs_chkdq(cp,
-				   (int64_t)(roundup(moreBytesRequested,
-						     VTOVCB(vp)->blockSize)),
-				   ap->a_cred, 0);
+		retval = hfs_chkdq(cp, (int64_t)(roundup(moreBytesRequested, VTOVCB(vp)->blockSize)), ap->a_cred, 0);
 		if (retval)
 			return (retval);
 
@@ -1872,8 +1724,7 @@ struct vop_allocate_args /* {
 #endif
 
 		/* lock extents b-tree (also protects volume bitmap) */
-		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-					     LK_EXCLUSIVE, ap->a_p);
+		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, ap->a_p);
 		if (retval) {
 #ifdef DARWIN_JOURNAL
 			if (hfsmp->jnl) {
@@ -1884,15 +1735,12 @@ struct vop_allocate_args /* {
 			goto Err_Exit;
 		}
 
-		retval = MacToVFSError(
-		    ExtendFileC(VTOVCB(vp), (FCB *)fp, moreBytesRequested,
-				blockHint, extendFlags, &actualBytesAdded));
+		retval = MacToVFSError(ExtendFileC(VTOVCB(vp), (FCB *)fp, moreBytesRequested, blockHint, extendFlags, &actualBytesAdded));
 
 		*(ap->a_bytesallocated) = actualBytesAdded;
 		filebytes = (off_t)fp->ff_blocks * (off_t)VTOVCB(vp)->blockSize;
 
-		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-					  LK_RELEASE, ap->a_p);
+		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, ap->a_p);
 
 #ifdef DARWIN_JOURNAL
 		// XXXdbg
@@ -1917,10 +1765,8 @@ struct vop_allocate_args /* {
 		 * until the file is closed, when we truncate the file to
 		 * allocation block size.
 		 */
-		if ((actualBytesAdded != 0) &&
-		    (moreBytesRequested < actualBytesAdded))
-			*(ap->a_bytesallocated) = roundup(
-			    moreBytesRequested, (off_t)VTOVCB(vp)->blockSize);
+		if ((actualBytesAdded != 0) && (moreBytesRequested < actualBytesAdded))
+			*(ap->a_bytesallocated) = roundup(moreBytesRequested, (off_t)VTOVCB(vp)->blockSize);
 
 	} else { /* Shorten the size of the file */
 
@@ -1947,8 +1793,7 @@ struct vop_allocate_args /* {
 #endif
 
 		/* lock extents b-tree (also protects volume bitmap) */
-		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-					     LK_EXCLUSIVE, ap->a_p);
+		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, ap->a_p);
 		if (retval) {
 #ifdef DARWIN_JOURNAL
 			if (hfsmp->jnl) {
@@ -1960,10 +1805,8 @@ struct vop_allocate_args /* {
 			goto Err_Exit;
 		}
 
-		retval = MacToVFSError(
-		    TruncateFileC(VTOVCB(vp), (FCB *)fp, length, false));
-		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID,
-					  LK_RELEASE, ap->a_p);
+		retval = MacToVFSError(TruncateFileC(VTOVCB(vp), (FCB *)fp, length, false));
+		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, ap->a_p);
 		filebytes = (off_t)fp->ff_blocks * (off_t)VTOVCB(vp)->blockSize;
 
 #ifdef DARWIN_JOURNAL
@@ -1982,8 +1825,7 @@ struct vop_allocate_args /* {
 			goto Err_Exit;
 #if QUOTA
 		/* These are  bytesreleased */
-		(void)hfs_chkdq(cp, (int64_t)-((startingPEOF - filebytes)),
-				NOCRED, 0);
+		(void)hfs_chkdq(cp, (int64_t)-((startingPEOF - filebytes)), NOCRED, 0);
 #endif /* QUOTA */
 
 		if (fp->ff_size > filebytes) {
@@ -1991,15 +1833,14 @@ struct vop_allocate_args /* {
 
 #ifdef DARWIN_UBC
 			if (UBCISVALID(vp))
-				ubc_setsize(vp,
-					    fp->ff_size); /* XXX check errors */
+				ubc_setsize(vp, fp->ff_size); /* XXX check errors */
 #endif
 		}
 	}
 
 Std_Exit:
 	cp->c_flag |= C_CHANGE | C_UPDATE;
-	retval2 = VOP_UPDATE(vp, &tv, &tv, MNT_WAIT);
+	retval2 = hfs_update(vp, &tv, &tv, MNT_WAIT);
 
 	if (retval == 0)
 		retval = retval2;
@@ -2010,7 +1851,8 @@ Err_Exit:
 /*
  * pagein for HFS filesystem
  */
-int hfs_pagein(ap)
+int
+hfs_pagein(ap)
 struct vop_pagein_args /* {
 	struct vnode *a_vp,
 	upl_t 	      a_pl,
@@ -2030,16 +1872,15 @@ struct vop_pagein_args /* {
 
 	VOP_DEVBLOCKSIZE(VTOC(vp)->c_devvp, &devBlockSize);
 
-	error = cluster_pagein(vp, ap->a_pl, ap->a_pl_offset, ap->a_f_offset,
-			       ap->a_size, (off_t)VTOF(vp)->ff_size,
-			       devBlockSize, ap->a_flags);
+	error = cluster_pagein(vp, ap->a_pl, ap->a_pl_offset, ap->a_f_offset, ap->a_size, (off_t)VTOF(vp)->ff_size, devBlockSize, ap->a_flags);
 	return (error);
 }
 
 /*
  * pageout for HFS filesystem.
  */
-int hfs_pageout(ap)
+int
+hfs_pageout(ap)
 struct vop_pageout_args /* {
    struct vnode *a_vp,
    upl_t         a_pl,
@@ -2070,9 +1911,7 @@ struct vop_pageout_args /* {
 	if (ap->a_f_offset < filesize)
 		rl_remove(ap->a_f_offset, end_of_range, &fp->ff_invalidranges);
 
-	retval =
-	    cluster_pageout(vp, ap->a_pl, ap->a_pl_offset, ap->a_f_offset,
-			    ap->a_size, filesize, devBlockSize, ap->a_flags);
+	retval = cluster_pageout(vp, ap->a_pl, ap->a_pl_offset, ap->a_f_offset, ap->a_size, filesize, devBlockSize, ap->a_flags);
 
 	/*
 	 * If we successfully wrote any data, and we are not the superuser
@@ -2086,10 +1925,12 @@ struct vop_pageout_args /* {
 }
 #endif /* DARWIN */
 
-void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
+void
+hfs_bstrategy(struct bufobj *bo, struct buf *bp)
+{
 	KASSERT(bo->bo_private != NULL, ("bo_private is null."));
 	struct vnode *devvp;
-	devvp = (struct vnode *) bo->bo_private;
+	devvp = (struct vnode *)bo->bo_private;
 	KASSERT(devvp != NULL, ("devvp is null."));
 
 	VOP_STRATEGY(devvp, bp);
@@ -2101,19 +1942,18 @@ void hfs_bstrategy(struct bufobj *bo, struct buf *bp) {
 #vop_bwrite {
 #	IN struct buf *bp;
  */
-int hfs_bwrite(struct buf *bp) {
+int
+hfs_bwrite(struct buf *bp)
+{
 	int retval = 0;
 	register struct vnode *vp = bp->b_vp;
 #if BYTE_ORDER == LITTLE_ENDIAN
 	BlockDescriptor block;
 
 	/* Trap B-Tree writes */
-	if ((VTOC(vp)->c_fileid == kHFSExtentsFileID) ||
-	    (VTOC(vp)->c_fileid == kHFSCatalogFileID)) {
-
+	if ((VTOC(vp)->c_fileid == kHFSExtentsFileID) || (VTOC(vp)->c_fileid == kHFSCatalogFileID)) {
 		/* Swap if the B-Tree node is in native byte order */
-		if (((UInt16 *)((char *)bp->b_data + bp->b_bcount - 2))[0] ==
-		    0x000e) {
+		if (((UInt16 *)((char *)bp->b_data + bp->b_bcount - 2))[0] == 0x000e) {
 			/* Prepare the block pointer */
 			block.blockHeader = bp;
 			block.buffer = bp->b_data;
@@ -2122,8 +1962,7 @@ int hfs_bwrite(struct buf *bp) {
 			block.blockSize = bp->b_bcount;
 
 			/* Endian un-swap B-Tree node */
-			SWAP_BT_NODE(&block, ISHFSPLUS(VTOVCB(vp)),
-				     VTOC(vp)->c_fileid, 1);
+			SWAP_BT_NODE(&block, ISHFSPLUS(VTOVCB(vp)), VTOC(vp)->c_fileid, 1);
 		}
 
 		/* We don't check to make sure that it's 0x0e00 because it could

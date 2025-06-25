@@ -442,7 +442,7 @@ static OSErr ReadBitmapBlock(
 		block += vcb->vcbVBMSt;			/* map to physical block */
 	}
 
-	err = meta_bread(vp, block, blockSize, NOCRED, &bp);
+	err = bread(vp, block, blockSize, NOCRED, &bp);
 
 	if (bp) {
 		if (err) {

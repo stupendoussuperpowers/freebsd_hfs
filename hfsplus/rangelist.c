@@ -2,13 +2,13 @@
  * Copyright (c) 2001 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,14 +16,13 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 #include <sys/types.h>
-
 #include <sys/param.h>
-#include <sys/time.h>
 #include <sys/malloc.h>
+#include <sys/time.h>
 
 #include <hfsplus/hfs.h>
 #include <hfsplus/rangelist.h>
@@ -33,27 +32,30 @@ static void rl_collapse_forwards(struct rl_head *rangelist, struct rl_entry *ran
 static void rl_collapse_backwards(struct rl_head *rangelist, struct rl_entry *range);
 static void rl_collapse_neighbors(struct rl_head *rangelist, struct rl_entry *range);
 
-
 #ifdef RL_DIAGNOSTIC
 static void
-rl_verify(struct rl_head *rangelist) {
+rl_verify(struct rl_head *rangelist)
+{
 	struct rl_entry *entry;
 	off_t limit = 0;
-	
-	if (TAILQ_EMPTY(rangelist)) return;
+
+	if (TAILQ_EMPTY(rangelist))
+		return;
 	entry = TAILQ_FIRST(rangelist);
 	while (1) {
-		if (TAILQ_NEXT(entry, rl_link) == entry) panic("rl_verify: circular rangelist?!");
-		if ((limit > 0) && (entry->rl_start <= limit)) panic("rl_verify: bad entry start?!");
-		if (entry->rl_end < entry->rl_start) panic("rl_verify: bad entry end?!");
+		if (TAILQ_NEXT(entry, rl_link) == entry)
+			panic("rl_verify: circular rangelist?!");
+		if ((limit > 0) && (entry->rl_start <= limit))
+			panic("rl_verify: bad entry start?!");
+		if (entry->rl_end < entry->rl_start)
+			panic("rl_verify: bad entry end?!");
 		limit = entry->rl_end;
-		if (entry == TAILQ_LAST(rangelist, rl_head)) return;
+		if (entry == TAILQ_LAST(rangelist, rl_head))
+			return;
 		entry = TAILQ_NEXT(entry, rl_link);
 	};
 }
 #endif
-
-
 
 /*
  * Initialize a range list head
@@ -61,10 +63,8 @@ rl_verify(struct rl_head *rangelist) {
 void
 rl_init(struct rl_head *rangelist)
 {
-    TAILQ_INIT(rangelist);
+	TAILQ_INIT(rangelist);
 }
-
-
 
 /*
  * Add a range to the list
@@ -77,11 +77,12 @@ rl_add(off_t start, off_t end, struct rl_head *rangelist)
 	enum rl_overlaptype ovcase;
 
 #ifdef RL_DIAGNOSTIC
-	if (end < start) panic("rl_add: end < start?!");
+	if (end < start)
+		panic("rl_add: end < start?!");
 #endif
 
 	ovcase = rl_scan(rangelist, start, end, &overlap);
-			
+
 	/*
 	 * Six cases:
 	 *	0) no overlap
@@ -92,70 +93,68 @@ rl_add(off_t start, off_t end, struct rl_head *rangelist)
 	 *	5) overlap ends after range
 	 */
 	switch (ovcase) {
-		case RL_NOOVERLAP: /* 0: no overlap */
-			/*
-				* If the list was empty 'prev' is undisturbed and 'overlap' == NULL;
-				* if the search hit a non-overlapping entry PAST the start of the
-				* new range, 'prev' points to ITS predecessor, and 'overlap' points
-				* to that entry:
-				*/
-			MALLOC5(range, struct rl_entry *, sizeof(*range), M_TEMP, M_WAITOK);
-			range->rl_start = start;
-			range->rl_end = end;
-			
-			/* Link in the new range: */
-			if (overlap) {
-				TAILQ_INSERT_AFTER(rangelist, overlap, range, rl_link);
-			} else {
-				TAILQ_INSERT_HEAD(rangelist, range, rl_link);
-			}
-			
-			/* Check to see if any ranges can be combined (possibly including the immediately
-			   preceding range entry)
-			 */
-			rl_collapse_neighbors(rangelist, range);
-			break;
+	case RL_NOOVERLAP: /* 0: no overlap */
+		/*
+		 * If the list was empty 'prev' is undisturbed and 'overlap' == NULL;
+		 * if the search hit a non-overlapping entry PAST the start of the
+		 * new range, 'prev' points to ITS predecessor, and 'overlap' points
+		 * to that entry:
+		 */
+		range = (struct rl_entry *)malloc(sizeof(*range), M_TEMP, M_WAITOK);
+		range->rl_start = start;
+		range->rl_end = end;
 
-		case RL_MATCHINGOVERLAP: /* 1: overlap == range */
-		case RL_OVERLAPCONTAINSRANGE: /* 2: overlap contains range */
-			range = overlap; /* for debug output below */
-			break;
+		/* Link in the new range: */
+		if (overlap) {
+			TAILQ_INSERT_AFTER(rangelist, overlap, range, rl_link);
+		} else {
+			TAILQ_INSERT_HEAD(rangelist, range, rl_link);
+		}
 
-		case RL_OVERLAPISCONTAINED: /* 3: range contains overlap */
-			/*
-			 * Replace the overlap with the new, larger range:
-			 */
-			overlap->rl_start = start;
-			overlap->rl_end = end;
-			rl_collapse_neighbors(rangelist, overlap);
-			range = overlap; /* for debug output below */
-			break;
+		/* Check to see if any ranges can be combined (possibly including the immediately
+		   preceding range entry)
+		 */
+		rl_collapse_neighbors(rangelist, range);
+		break;
 
-		case RL_OVERLAPSTARTSBEFORE: /* 4: overlap starts before range */
-			/*
-			 * Expand the overlap area to cover the new range:
-			 */
-			overlap->rl_end = end;
-			rl_collapse_forwards(rangelist, overlap);
-			range = overlap; /* for debug output below */
-			break;
+	case RL_MATCHINGOVERLAP:      /* 1: overlap == range */
+	case RL_OVERLAPCONTAINSRANGE: /* 2: overlap contains range */
+		range = overlap;      /* for debug output below */
+		break;
 
-		case RL_OVERLAPENDSAFTER: /* 5: overlap ends after range */
-			/*
-			 * Expand the overlap area to cover the new range:
-			 */
-			overlap->rl_start = start;
-			rl_collapse_backwards(rangelist, overlap);
-			range = overlap; /* for debug output below */
-			break;
+	case RL_OVERLAPISCONTAINED: /* 3: range contains overlap */
+		/*
+		 * Replace the overlap with the new, larger range:
+		 */
+		overlap->rl_start = start;
+		overlap->rl_end = end;
+		rl_collapse_neighbors(rangelist, overlap);
+		range = overlap; /* for debug output below */
+		break;
+
+	case RL_OVERLAPSTARTSBEFORE: /* 4: overlap starts before range */
+		/*
+		 * Expand the overlap area to cover the new range:
+		 */
+		overlap->rl_end = end;
+		rl_collapse_forwards(rangelist, overlap);
+		range = overlap; /* for debug output below */
+		break;
+
+	case RL_OVERLAPENDSAFTER: /* 5: overlap ends after range */
+		/*
+		 * Expand the overlap area to cover the new range:
+		 */
+		overlap->rl_start = start;
+		rl_collapse_backwards(rangelist, overlap);
+		range = overlap; /* for debug output below */
+		break;
 	}
 
 #ifdef RL_DIAGNOSTIC
 	rl_verify(rangelist);
 #endif
 }
-
-
 
 /*
  * Remove a range from a range list.
@@ -170,20 +169,20 @@ rl_remove(off_t start, off_t end, struct rl_head *rangelist)
 	int ovcase, moretotest;
 
 #ifdef RL_DIAGNOSTIC
-	if (end < start) panic("rl_remove: end < start?!");
+	if (end < start)
+		panic("rl_remove: end < start?!");
 #endif
 
 	if (TAILQ_EMPTY(rangelist)) {
 		return;
 	};
-        
+
 	range = TAILQ_FIRST(rangelist);
 	while ((ovcase = rl_scan_from(rangelist, start, end, &overlap, range))) {
 		switch (ovcase) {
-
 		case RL_MATCHINGOVERLAP: /* 1: overlap == range */
 			TAILQ_REMOVE(rangelist, overlap, rl_link);
-			FREE(overlap, M_TEMP);
+			free(overlap, M_TEMP);
 			break;
 
 		case RL_OVERLAPCONTAINSRANGE: /* 2: overlap contains range: split it */
@@ -191,34 +190,35 @@ rl_remove(off_t start, off_t end, struct rl_head *rangelist)
 				overlap->rl_start = end + 1;
 				break;
 			};
-			
+
 			if (overlap->rl_end == end) {
 				overlap->rl_end = start - 1;
 				break;
 			};
-			
+
 			/*
-			* Make a new range consisting of the last part of the encompassing range
-			*/
-			MALLOC5(splitrange, struct rl_entry *, sizeof *splitrange, M_TEMP, M_WAITOK);
+			 * Make a new range consisting of the last part of the encompassing range
+			 */
+			splitrange = (struct rl_entry *)malloc(sizeof *splitrange, M_TEMP, M_WAITOK);
 			splitrange->rl_start = end + 1;
 			splitrange->rl_end = overlap->rl_end;
 			overlap->rl_end = start - 1;
-			
+
 			/*
-			* Now link the new entry into the range list after the range from which it was split:
-			*/
+			 * Now link the new entry into the range list after the range from which it was split:
+			 */
 			TAILQ_INSERT_AFTER(rangelist, overlap, splitrange, rl_link);
 			break;
 
 		case RL_OVERLAPISCONTAINED: /* 3: range contains overlap */
 			moretotest = (overlap != TAILQ_LAST(rangelist, rl_head));
 #ifdef RL_DIAGNOSTIC
-			if (TAILQ_NEXT(overlap, rl_link) == overlap) panic("rl_remove: circular range list?!");
+			if (TAILQ_NEXT(overlap, rl_link) == overlap)
+				panic("rl_remove: circular range list?!");
 #endif
-			next_range = TAILQ_NEXT(overlap, rl_link);	/* Check before discarding overlap entry */
+			next_range = TAILQ_NEXT(overlap, rl_link); /* Check before discarding overlap entry */
 			TAILQ_REMOVE(rangelist, overlap, rl_link);
-			FREE(overlap, M_TEMP);
+			free(overlap, M_TEMP);
 			if (moretotest) {
 				range = next_range;
 				continue;
@@ -230,7 +230,8 @@ rl_remove(off_t start, off_t end, struct rl_head *rangelist)
 			overlap->rl_end = start - 1;
 			if (moretotest) {
 #ifdef RL_DIAGNOSTIC
-				if (TAILQ_NEXT(overlap, rl_link) == overlap) panic("rl_remove: circular range list?!");
+				if (TAILQ_NEXT(overlap, rl_link) == overlap)
+					panic("rl_remove: circular range list?!");
 #endif
 				range = TAILQ_NEXT(overlap, rl_link);
 				continue;
@@ -249,8 +250,6 @@ rl_remove(off_t start, off_t end, struct rl_head *rangelist)
 #endif
 }
 
-
-
 /*
  * Scan a range list for an entry in a specified range (if any):
  *
@@ -259,20 +258,15 @@ rl_remove(off_t start, off_t end, struct rl_head *rangelist)
  */
 
 enum rl_overlaptype
-rl_scan(struct rl_head *rangelist,
-		off_t start,
-		off_t end,
-		struct rl_entry **overlap) {
-		
+rl_scan(struct rl_head *rangelist, off_t start, off_t end, struct rl_entry **overlap)
+{
 	if (TAILQ_EMPTY(rangelist)) {
 		*overlap = NULL;
 		return RL_NOOVERLAP;
 	};
-        
-	return rl_scan_from(rangelist, start, end, overlap, TAILQ_FIRST(rangelist));	
+
+	return rl_scan_from(rangelist, start, end, overlap, TAILQ_FIRST(rangelist));
 }
-
-
 
 /*
  * Walk the list of ranges for an entry to
@@ -282,23 +276,19 @@ rl_scan(struct rl_head *rangelist,
  *	     There may be more than one.
  */
 static enum rl_overlaptype
-rl_scan_from(struct rl_head *rangelist,
-			 off_t start,
-			 off_t end,
-			 struct rl_entry **overlap,
-			struct rl_entry *range)
+rl_scan_from(struct rl_head *rangelist, off_t start, off_t end, struct rl_entry **overlap, struct rl_entry *range)
 {
 	if (TAILQ_EMPTY(rangelist)) {
 		*overlap = NULL;
 		return RL_NOOVERLAP;
 	};
-        
+
 #ifdef RL_DIAGNOSTIC
-		rl_verify(rangelist);
+	rl_verify(rangelist);
 #endif
 
 	*overlap = range;
-        
+
 	while (1) {
 		/*
 		 * OK, check for overlap
@@ -311,52 +301,45 @@ rl_scan_from(struct rl_head *rangelist,
 		 *	4) overlap starts before range (RL_OVERLAPSTARTSBEFORE)
 		 *	5) overlap ends after range (RL_OVERLAPENDSAFTER)
 		 */
-		if (((range->rl_end != RL_INFINITY) && (start > range->rl_end)) ||
-			((end != RL_INFINITY) && (range->rl_start > end))) {
+		if (((range->rl_end != RL_INFINITY) && (start > range->rl_end)) || ((end != RL_INFINITY) && (range->rl_start > end))) {
 			/* Case 0 (RL_NOOVERLAP), at least with the current entry: */
 			if ((end != RL_INFINITY) && (range->rl_start > end)) {
 				return RL_NOOVERLAP;
 			};
-			
+
 			/* Check the other entries in the list: */
 			if (range == TAILQ_LAST(rangelist, rl_head)) {
 				return RL_NOOVERLAP;
 			};
 #ifdef RL_DIAGNOSTIC
-			if (TAILQ_NEXT(range, rl_link) == range) panic("rl_scan_from: circular range list?!");
+			if (TAILQ_NEXT(range, rl_link) == range)
+				panic("rl_scan_from: circular range list?!");
 #endif
 			*overlap = range = TAILQ_NEXT(range, rl_link);
 			continue;
 		}
-		
+
 		if ((range->rl_start == start) && (range->rl_end == end)) {
 			/* Case 1 (RL_MATCHINGOVERLAP) */
 			return RL_MATCHINGOVERLAP;
 		}
-		
-		if ((range->rl_start <= start) &&
-			(end != RL_INFINITY) &&
-			((range->rl_end >= end) || (range->rl_end == RL_INFINITY))) {
-				/* Case 2 (RL_OVERLAPCONTAINSRANGE) */
+
+		if ((range->rl_start <= start) && (end != RL_INFINITY) && ((range->rl_end >= end) || (range->rl_end == RL_INFINITY))) {
+			/* Case 2 (RL_OVERLAPCONTAINSRANGE) */
 			return RL_OVERLAPCONTAINSRANGE;
 		}
-		
-		if ((start <= range->rl_start) &&
-			((end == RL_INFINITY) ||
-			 ((range->rl_end != RL_INFINITY) && (end >= range->rl_end)))) {
+
+		if ((start <= range->rl_start) && ((end == RL_INFINITY) || ((range->rl_end != RL_INFINITY) && (end >= range->rl_end)))) {
 			/* Case 3 (RL_OVERLAPISCONTAINED) */
 			return RL_OVERLAPISCONTAINED;
 		}
-		
-		if ((range->rl_start < start) &&
-			((range->rl_end >= start) || (range->rl_end == RL_INFINITY))) {
+
+		if ((range->rl_start < start) && ((range->rl_end >= start) || (range->rl_end == RL_INFINITY))) {
 			/* Case 4 (RL_OVERLAPSTARTSBEFORE) */
 			return RL_OVERLAPSTARTSBEFORE;
 		}
-		
-		if ((range->rl_start > start) &&
-			(end != RL_INFINITY) &&
-			((range->rl_end > end) || (range->rl_end == RL_INFINITY))) {
+
+		if ((range->rl_start > start) && (end != RL_INFINITY) && ((range->rl_end > end) || (range->rl_end == RL_INFINITY))) {
 			/* Case 5 (RL_OVERLAPENDSAFTER) */
 			return RL_OVERLAPENDSAFTER;
 		}
@@ -366,71 +349,73 @@ rl_scan_from(struct rl_head *rangelist,
 		panic("rl_scan_from: unhandled overlap condition?!");
 #endif
 	}
-        
+
 	return RL_NOOVERLAP;
 }
 
-
 static void
-rl_collapse_forwards(struct rl_head *rangelist, struct rl_entry *range) {
-    struct rl_entry *next_range;
-    
-    while (1) {
-		if (range == TAILQ_LAST(rangelist, rl_head)) return;
-    
+rl_collapse_forwards(struct rl_head *rangelist, struct rl_entry *range)
+{
+	struct rl_entry *next_range;
+
+	while (1) {
+		if (range == TAILQ_LAST(rangelist, rl_head))
+			return;
+
 #ifdef RL_DIAGNOSTIC
-		if (TAILQ_NEXT(range, rl_link) == range) panic("rl_collapse_forwards: circular range list?!");
+		if (TAILQ_NEXT(range, rl_link) == range)
+			panic("rl_collapse_forwards: circular range list?!");
 #endif
 		next_range = TAILQ_NEXT(range, rl_link);
-        if ((range->rl_end != RL_INFINITY) && (range->rl_end < next_range->rl_start - 1)) return;
+		if ((range->rl_end != RL_INFINITY) && (range->rl_end < next_range->rl_start - 1))
+			return;
 
-        /* Expand this range to include the next range: */
-        range->rl_end = next_range->rl_end;
-        
-        /* Remove the now covered range from the list: */
-        TAILQ_REMOVE(rangelist, next_range, rl_link);
-        FREE(next_range, M_TEMP);
+		/* Expand this range to include the next range: */
+		range->rl_end = next_range->rl_end;
+
+		/* Remove the now covered range from the list: */
+		TAILQ_REMOVE(rangelist, next_range, rl_link);
+		free(next_range, M_TEMP);
 
 #ifdef RL_DIAGNOSTIC
 		rl_verify(rangelist);
 #endif
-    };
+	};
 }
 
-
-
 static void
-rl_collapse_backwards(struct rl_head *rangelist, struct rl_entry *range) {
-    struct rl_entry *prev_range;
-    
-    while (1) {
-        if (range == TAILQ_FIRST(rangelist)) return;
-        
+rl_collapse_backwards(struct rl_head *rangelist, struct rl_entry *range)
+{
+	struct rl_entry *prev_range;
+
+	while (1) {
+		if (range == TAILQ_FIRST(rangelist))
+			return;
+
 #ifdef RL_DIAGNOSTIC
-		if (TAILQ_PREV(range, rl_head, rl_link) == range) panic("rl_collapse_backwards: circular range list?!");
+		if (TAILQ_PREV(range, rl_head, rl_link) == range)
+			panic("rl_collapse_backwards: circular range list?!");
 #endif
-        prev_range = TAILQ_PREV(range, rl_head, rl_link);
-        if (prev_range->rl_end < range->rl_start - 1) {
+		prev_range = TAILQ_PREV(range, rl_head, rl_link);
+		if (prev_range->rl_end < range->rl_start - 1) {
 #ifdef RL_DIAGNOSTIC
 			rl_verify(rangelist);
 #endif
-        	return;
-        };
-        
-        /* Expand this range to include the previous range: */
-        range->rl_start = prev_range->rl_start;
-    
-        /* Remove the now covered range from the list: */
-        TAILQ_REMOVE(rangelist, prev_range, rl_link);
-        FREE(prev_range, M_TEMP);
-    };
+			return;
+		};
+
+		/* Expand this range to include the previous range: */
+		range->rl_start = prev_range->rl_start;
+
+		/* Remove the now covered range from the list: */
+		TAILQ_REMOVE(rangelist, prev_range, rl_link);
+		free(prev_range, M_TEMP);
+	};
 }
-
-
 
 static void
 rl_collapse_neighbors(struct rl_head *rangelist, struct rl_entry *range)
 {
-    rl_collapse_forwards(rangelist, range);
-    rl_collapse_backwards(rangelist, range);
+	rl_collapse_forwards(rangelist, range);
+	rl_collapse_backwards(rangelist, range);
 }

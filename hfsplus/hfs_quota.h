@@ -2,13 +2,13 @@
  * Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -65,33 +65,32 @@
 
 #ifdef _KERNEL
 #ifdef __APPLE_API_PRIVATE
-#include <sys/queue.h>
-
 #include <sys/cdefs.h>
+#include <sys/queue.h>
 
 struct cnode;
 struct mount;
 struct proc;
 struct ucred;
 __BEGIN_DECLS
-int	hfs_chkdq __P((struct cnode *, int64_t, struct ucred *, int));
-int	hfs_chkdqchg __P((struct cnode *, int64_t, struct ucred *, int));
-int	hfs_chkiq __P((struct cnode *, long, struct ucred *, int));
-int	hfs_chkiqchg __P((struct cnode *, long, struct ucred *, int));
-int	hfs_getinoquota __P((struct cnode *));
-int	hfs_getquota __P((struct mount *, u_long, int, caddr_t));
-int	hfs_qsync __P((struct mount *mp));
-int	hfs_quotaoff __P((struct proc *, struct mount *, int));
-int	hfs_quotaon __P((struct proc *, struct mount *, int, caddr_t, enum uio_seg));
-int	hfs_setquota __P((struct mount *, u_long, int, caddr_t));
-int	hfs_setuse __P((struct mount *, u_long, int, caddr_t));
-int	hfs_quotactl __P((struct mount *, int, uid_t, caddr_t, struct proc *));
+int hfs_chkdq __P((struct cnode *, int64_t, struct ucred *, int));
+int hfs_chkdqchg __P((struct cnode *, int64_t, struct ucred *, int));
+int hfs_chkiq __P((struct cnode *, long, struct ucred *, int));
+int hfs_chkiqchg __P((struct cnode *, long, struct ucred *, int));
+int hfs_getinoquota __P((struct cnode *));
+int hfs_getquota __P((struct mount *, u_long, int, caddr_t));
+int hfs_qsync __P((struct mount * mp));
+int hfs_quotaoff __P((struct proc *, struct mount *, int));
+int hfs_quotaon __P((struct proc *, struct mount *, int, caddr_t, enum uio_seg));
+int hfs_setquota __P((struct mount *, u_long, int, caddr_t));
+int hfs_setuse __P((struct mount *, u_long, int, caddr_t));
+int hfs_quotactl __P((struct mount *, int, uid_t, caddr_t, struct proc *));
 __END_DECLS
 
-// #define DIAGNOSTIC 0 
+// #define DIAGNOSTIC 0
 #if DIAGNOSTIC
 __BEGIN_DECLS
-void	hfs_chkdquot __P((struct cnode *));
+void hfs_chkdquot __P((struct cnode *));
 __END_DECLS
 #endif
 #endif /* __APPLE_API_PRIVATE */

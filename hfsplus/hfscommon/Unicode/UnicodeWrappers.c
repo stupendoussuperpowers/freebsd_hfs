@@ -2,13 +2,13 @@
  * Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * The contents of this file constitute Original Code as defined in and
  * are subject to the Apple Public Source License Version 1.1 (the
  * "License").  You may not use this file except in compliance with the
  * License.  Please obtain a copy of the License at
  * http://www.apple.com/publicsource and read it before using this file.
- * 
+ *
  * This Original Code and all software distributed under the License are
  * distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -16,7 +16,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE OR NON-INFRINGEMENT.  Please see the
  * License for the specific language governing rights and limitations
  * under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 /*
@@ -30,76 +30,66 @@
 
 #include "../../hfs_macos_defs.h"
 #include "../Unicode/UCStringCompareData.h"
-
 #include "../headers/FileMgrInternal.h"
 #include "../headers/HFSUnicodeWrappers.h"
 
 enum {
-	kMinFileExtensionChars = 1,	/* does not include dot */
-	kMaxFileExtensionChars = 5	/* does not include dot */
+	kMinFileExtensionChars = 1, /* does not include dot */
+	kMaxFileExtensionChars = 5  /* does not include dot */
 };
 
+#define EXTENSIONCHAR(c) (((c) >= 0x61 && (c) <= 0x7A) || ((c) >= 0x41 && (c) <= 0x5A) || ((c) >= 0x30 && (c) <= 0x39))
 
-#define EXTENSIONCHAR(c)	(((c) >= 0x61 && (c) <= 0x7A) || \
-				 ((c) >= 0x41 && (c) <= 0x5A) || \
-				 ((c) >= 0x30 && (c) <= 0x39))
+#define IsHexDigit(c)	 (((c) >= (UInt8)'0' && (c) <= (UInt8)'9') || ((c) >= (UInt8)'A' && (c) <= (UInt8)'F'))
 
+static void GetFilenameExtension(ItemCount length, ConstUniCharArrayPtr unicodeStr, char *extStr);
 
-#define IsHexDigit(c)		(((c) >= (UInt8) '0' && (c) <= (UInt8) '9') || \
-				 ((c) >= (UInt8) 'A' && (c) <= (UInt8) 'F'))
+static void GetFileIDString(HFSCatalogNodeID fileID, char *fileIDStr);
 
-
-static void	GetFilenameExtension( ItemCount length, ConstUniCharArrayPtr unicodeStr, char* extStr );
-
-static void	GetFileIDString( HFSCatalogNodeID fileID, char* fileIDStr );
-
-static UInt32	HexStringToInteger( UInt32 length, const UInt8 *hexStr );
-
-
+static UInt32 HexStringToInteger(UInt32 length, const UInt8 *hexStr);
 
 /*
  * Convert file ID into a hexidecimal string with no leading zeros
  */
 static void
-GetFileIDString( HFSCatalogNodeID fileID, char * fileIDStr )
+GetFileIDString(HFSCatalogNodeID fileID, char *fileIDStr)
 {
-	SInt32	i, b;
-	UInt8	*translate = (UInt8 *) "0123456789ABCDEF";
-	UInt8	c;
-	
+	SInt32 i, b;
+	UInt8 *translate = (UInt8 *)"0123456789ABCDEF";
+	UInt8 c;
+
 	fileIDStr[0] = '#';
 
-	for ( i = 0, b = 28; b >= 0; b -= 4 ) {
+	for (i = 0, b = 28; b >= 0; b -= 4) {
 		c = *(translate + ((fileID >> b) & 0x0000000F));
-		
+
 		/* if its not a leading zero add it to our string */
-		if ( (c != (UInt8) '0') || (i > 1) || (b == 0) )
+		if ((c != (UInt8)'0') || (i > 1) || (b == 0))
 			fileIDStr[++i] = c;
 	}
 
 	fileIDStr[++i] = '\0';
 }
 
-
 /*
  * Get filename extension (if any) as a C string
  */
 static void
-GetFilenameExtension(ItemCount length, ConstUniCharArrayPtr unicodeStr, char * extStr)
+GetFilenameExtension(ItemCount length, ConstUniCharArrayPtr unicodeStr, char *extStr)
 {
-	UInt32	i;
-	UniChar	c;
-	UInt16	extChars;	/* number of extension chars (excluding dot) */
-	UInt16	maxExtChars;
-	Boolean	foundExtension;
+	UInt32 i;
+	UniChar c;
+	UInt16 extChars; /* number of extension chars (excluding dot) */
+	UInt16 maxExtChars;
+	Boolean foundExtension;
 
-	extStr[0] = '\0';	/* assume there's no extension */
+	extStr[0] = '\0'; /* assume there's no extension */
 
-	if ( length < 3 )
-		return;		/* "x.y" is smallest possible extension */
-	
-	if ( length < (kMaxFileExtensionChars + 2) )
-		maxExtChars = length - 2;	/* save room for prefix + dot */
+	if (length < 3)
+		return; /* "x.y" is smallest possible extension */
+
+	if (length < (kMaxFileExtensionChars + 2))
+		maxExtChars = length - 2; /* save room for prefix + dot */
 	else
 		maxExtChars = kMaxFileExtensionChars;
 
@@ -107,158 +97,152 @@ GetFilenameExtension(ItemCount length, ConstUniCharArrayPtr unicodeStr, char * e
 	extChars = 0;
 	foundExtension = false;
 
-	while ( extChars <= maxExtChars ) {
+	while (extChars <= maxExtChars) {
 		c = unicodeStr[--i];
 
 		/* look for leading dot */
-		if ( c == (UniChar) '.' ) {
-			if ( extChars > 0 )	/* cannot end with a dot */
+		if (c == (UniChar)'.') {
+			if (extChars > 0) /* cannot end with a dot */
 				foundExtension = true;
 			break;
 		}
 
-		if ( EXTENSIONCHAR(c) )
+		if (EXTENSIONCHAR(c))
 			++extChars;
 		else
 			break;
 	}
-	
+
 	/* if we found one then copy it */
-	if ( foundExtension ) {
+	if (foundExtension) {
 		UInt8 *extStrPtr = extStr;
 		const UniChar *unicodeStrPtr = &unicodeStr[i];
-		
-		for ( i = 0; i <= extChars; ++i )
-			*(extStrPtr++) = (UInt8) *(unicodeStrPtr++);
-		extStr[extChars + 1] = '\0';	/* terminate extension + dot */
+
+		for (i = 0; i <= extChars; ++i)
+			*(extStrPtr++) = (UInt8) * (unicodeStrPtr++);
+		extStr[extChars + 1] = '\0'; /* terminate extension + dot */
 	}
 }
-
-
 
 /*
  * Count filename extension characters (if any)
  */
 static UInt32
-CountFilenameExtensionChars( const unsigned char * filename, UInt32 length )
+CountFilenameExtensionChars(const unsigned char *filename, UInt32 length)
 {
-	UInt32	i;
-	UniChar	c;
-	UInt32	extChars;	/* number of extension chars (excluding dot) */
-	UInt16	maxExtChars;
+	UInt32 i;
+	UniChar c;
+	UInt32 extChars; /* number of extension chars (excluding dot) */
+	UInt16 maxExtChars;
 	// Boolean	foundExtension;
 
-	if ( length < 3 )
-		return 0;	/* "x.y" is smallest possible extension	*/
-	
-	if ( length < (kMaxFileExtensionChars + 2) )
-		maxExtChars = length - 2;	/* save room for prefix + dot */
+	if (length < 3)
+		return 0; /* "x.y" is smallest possible extension	*/
+
+	if (length < (kMaxFileExtensionChars + 2))
+		maxExtChars = length - 2; /* save room for prefix + dot */
 	else
 		maxExtChars = kMaxFileExtensionChars;
 
-	extChars = 0;		/* assume there's no extension */
-	i = length - 1;		/* index to last ascii character */
+	extChars = 0;	/* assume there's no extension */
+	i = length - 1; /* index to last ascii character */
 	// foundExtension = false;
 
-	while ( extChars <= maxExtChars ) {
+	while (extChars <= maxExtChars) {
 		c = filename[i--];
 
 		/* look for leading dot */
-		if ( c == (UInt8) '.' )	{
-			if ( extChars > 0 )	/* cannot end with a dot */
+		if (c == (UInt8)'.') {
+			if (extChars > 0) /* cannot end with a dot */
 				return (extChars);
 
 			break;
 		}
 
-		if ( EXTENSIONCHAR(c) )
+		if (EXTENSIONCHAR(c))
 			++extChars;
 		else
 			break;
 	}
-	
+
 	return 0;
 }
-
 
 /*
  * extract the file id from a mangled name
  */
 HFSCatalogNodeID
-GetEmbeddedFileID(const unsigned char * filename, UInt32 length, UInt32 *prefixLength)
+GetEmbeddedFileID(const unsigned char *filename, UInt32 length, UInt32 *prefixLength)
 {
-	short	extChars;
-	short	i;
-	UInt8	c;
+	short extChars;
+	short i;
+	UInt8 c;
 
 	*prefixLength = 0;
 
-	if ( filename == NULL )
+	if (filename == NULL)
 		return 0;
 
-	if ( length < 28 )
-		return 0;	/* too small to have been mangled */
+	if (length < 28)
+		return 0; /* too small to have been mangled */
 
 	/* big enough for a file ID (#10) and an extension (.x) ? */
-	if ( length > 5 )
+	if (length > 5)
 		extChars = CountFilenameExtensionChars(filename, length);
 	else
 		extChars = 0;
 
 	/* skip over dot plus extension characters */
-	if ( extChars > 0 )
-		length -= (extChars + 1);	
+	if (extChars > 0)
+		length -= (extChars + 1);
 
 	/* scan for file id digits */
-	for ( i = length - 1; i >= 0; --i) {
+	for (i = length - 1; i >= 0; --i) {
 		c = filename[i];
 
 		/* look for file ID marker */
-		if ( c == '#' ) {
-			if ( (length - i) < 3 )
-				break;	/* too small to be a file ID */
+		if (c == '#') {
+			if ((length - i) < 3)
+				break; /* too small to be a file ID */
 
 			*prefixLength = i;
-			return HexStringToInteger(length - i - 1, &filename[i+1]);
+			return HexStringToInteger(length - i - 1, &filename[i + 1]);
 		}
 
-		if ( !IsHexDigit(c) )
-			break;	/* file ID string must have hex digits */
+		if (!IsHexDigit(c))
+			break; /* file ID string must have hex digits */
 	}
 
 	return 0;
 }
 
-
-
 static UInt32
 HexStringToInteger(UInt32 length, const UInt8 *hexStr)
 {
-	UInt32		value;
-	short		i;
-	UInt8		c;
-	const UInt8	*p;
+	UInt32 value;
+	short i;
+	UInt8 c;
+	const UInt8 *p;
 
 	value = 0;
 	p = hexStr;
 
-	for ( i = 0; i < length; ++i ) {
+	for (i = 0; i < length; ++i) {
 		c = *p++;
 
 		if (c >= '0' && c <= '9') {
 			value = value << 4;
-			value += (UInt32) c - (UInt32) '0';
+			value += (UInt32)c - (UInt32)'0';
 		} else if (c >= 'A' && c <= 'F') {
 			value = value << 4;
-			value += 10 + ((unsigned int) c - (unsigned int) 'A');
+			value += 10 + ((unsigned int)c - (unsigned int)'A');
 		} else {
-			return 0;	/* bad character */
+			return 0; /* bad character */
 		}
 	}
 
 	return value;
 }
-
 
 /*
  * Routine:	FastRelString
@@ -268,11 +252,12 @@ HexStringToInteger(UInt32 length, const UInt8 *hexStr)
  *		return	 0 if equal
  *
  */
-SInt32	FastRelString( ConstStr255Param str1, ConstStr255Param str2 )
+SInt32
+FastRelString(ConstStr255Param str1, ConstStr255Param str2)
 {
-	UInt16*			compareTable;
-	SInt32	 		bestGuess;
-	UInt8 	 		length, length2;
+	UInt16 *compareTable;
+	SInt32 bestGuess;
+	UInt8 length, length2;
 	// UInt8 	 		delta;
 
 	// delta = 0;
@@ -281,29 +266,25 @@ SInt32	FastRelString( ConstStr255Param str1, ConstStr255Param str2 )
 
 	if (length == length2)
 		bestGuess = 0;
-	else if (length < length2)
-	{
+	else if (length < length2) {
 		bestGuess = -1;
 		// delta = length2 - length;
-	}
-	else
-	{
+	} else {
 		bestGuess = 1;
 		length = length2;
 	}
 
-	compareTable = (UInt16*) gCompareTable;
+	compareTable = (UInt16 *)gCompareTable;
 
-	while (length--)
-	{
-		UInt8	aChar, bChar;
+	while (length--) {
+		UInt8 aChar, bChar;
 
 		aChar = *(str1++);
 		bChar = *(str2++);
-		
-		if (aChar != bChar)		//	If they don't match exacly, do case conversion
-		{	
-			UInt16	aSortWord, bSortWord;
+
+		if (aChar != bChar) //	If they don't match exacly, do case conversion
+		{
+			UInt16 aSortWord, bSortWord;
 
 			aSortWord = compareTable[aChar];
 			bSortWord = compareTable[bChar];
@@ -314,16 +295,14 @@ SInt32	FastRelString( ConstStr255Param str1, ConstStr255Param str2 )
 			if (aSortWord < bSortWord)
 				return -1;
 		}
-		
+
 		//	If characters match exactly, then go on to next character immediately without
 		//	doing any extra work.
 	}
-	
+
 	//	if you got to here, then return bestGuess
 	return bestGuess;
-}	
-
-
+}
 
 //
 //	FastUnicodeCompare - Compare two Unicode strings; produce a relative ordering
@@ -382,20 +361,20 @@ SInt32	FastRelString( ConstStr255Param str1, ConstStr255Param str2 )
 //			return 1;
 //
 
-SInt32 FastUnicodeCompare ( register ConstUniCharArrayPtr str1, register ItemCount length1,
-							register ConstUniCharArrayPtr str2, register ItemCount length2)
+SInt32
+FastUnicodeCompare(register ConstUniCharArrayPtr str1, register ItemCount length1, register ConstUniCharArrayPtr str2, register ItemCount length2)
 {
-	register UInt16		c1,c2;
-	register UInt16		temp;
-	register UInt16*	lowerCaseTable;
+	register UInt16 c1, c2;
+	register UInt16 temp;
+	register UInt16 *lowerCaseTable;
 
-	lowerCaseTable = (UInt16*) gLowerCaseTable;
+	lowerCaseTable = (UInt16 *)gLowerCaseTable;
 
 	while (1) {
 		/* Set default values for c1, c2 in case there are no more valid chars */
 		c1 = 0;
 		c2 = 0;
-		
+
 		/* Find next non-ignorable char from str1, or zero if no more */
 		while (length1 && c1 == 0) {
 			c1 = *(str1++);
@@ -406,11 +385,10 @@ SInt32 FastUnicodeCompare ( register ConstUniCharArrayPtr str1, register ItemCou
 				break;
 			}
 			/* case fold if neccessary */
-			if ((temp = lowerCaseTable[c1>>8]) != 0)
+			if ((temp = lowerCaseTable[c1 >> 8]) != 0)
 				c1 = lowerCaseTable[temp + (c1 & 0x00FF)];
 		}
-		
-		
+
 		/* Find next non-ignorable char from str2, or zero if no more */
 		while (length2 && c2 == 0) {
 			c2 = *(str2++);
@@ -421,27 +399,26 @@ SInt32 FastUnicodeCompare ( register ConstUniCharArrayPtr str1, register ItemCou
 				break;
 			}
 			/* case fold if neccessary */
-			if ((temp = lowerCaseTable[c2>>8]) != 0)
+			if ((temp = lowerCaseTable[c2 >> 8]) != 0)
 				c2 = lowerCaseTable[temp + (c2 & 0x00FF)];
 		}
-		
-		if (c1 != c2)		//	found a difference, so stop looping
+
+		if (c1 != c2) //	found a difference, so stop looping
 			break;
-		
-		if (c1 == 0)		//	did we reach the end of both strings at the same time?
-			return 0;		//	yes, so strings are equal
+
+		if (c1 == 0)	  //	did we reach the end of both strings at the same time?
+			return 0; //	yes, so strings are equal
 	}
-	
+
 	if (c1 < c2)
 		return -1;
 	else
 		return 1;
 }
 
-
 OSErr
-ConvertUnicodeToUTF8Mangled(ByteCount srcLen, ConstUniCharArrayPtr srcStr, ByteCount maxDstLen,
-					 ByteCount *actualDstLen, unsigned char* dstStr, HFSCatalogNodeID cnid)
+ConvertUnicodeToUTF8Mangled(ByteCount srcLen, ConstUniCharArrayPtr srcStr, ByteCount maxDstLen, ByteCount *actualDstLen, unsigned char *dstStr,
+    HFSCatalogNodeID cnid)
 {
 	ByteCount subMaxLen;
 	size_t utf8len;
@@ -449,13 +426,13 @@ ConvertUnicodeToUTF8Mangled(ByteCount srcLen, ConstUniCharArrayPtr srcStr, ByteC
 	char extStr[15];
 
 	GetFileIDString(cnid, fileIDStr);
-	GetFilenameExtension(srcLen/sizeof(UniChar), srcStr, extStr);
+	GetFilenameExtension(srcLen / sizeof(UniChar), srcStr, extStr);
 
 	/* remove extension chars from source */
 	srcLen -= strlen(extStr) * sizeof(UniChar);
 	subMaxLen = maxDstLen - (strlen(extStr) + strlen(fileIDStr));
 
-	(void) utf8_encodestr(srcStr, srcLen, dstStr, &utf8len, subMaxLen, ':', 0);
+	(void)utf8_encodestr(srcStr, srcLen, dstStr, &utf8len, subMaxLen, ':', 0);
 
 	strcat(dstStr, fileIDStr);
 	strcat(dstStr, extStr);
@@ -463,4 +440,3 @@ ConvertUnicodeToUTF8Mangled(ByteCount srcLen, ConstUniCharArrayPtr srcStr, ByteC
 
 	return noErr;
 }
-
