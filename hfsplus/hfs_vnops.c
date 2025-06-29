@@ -17,6 +17,8 @@
 #include <sys/unistd.h>
 #include <sys/vnode.h>
 
+#include <sys/kdb.h>
+
 #include <vm/vm.h>
 #include <vm/vm_extern.h>
 #include <vm/vm_object.h>
@@ -36,22 +38,69 @@
 #include "hfscommon/headers/BTreesInternal.h"
 #include "hfscommon/headers/FileMgrInternal.h"
 
+/* hfs_readwrite.c */
 int hfs_bmap(struct vop_bmap_args *);
 int hfs_strategy(struct vop_strategy_args *);
-int hfs_reclaim(struct vop_reclaim_args *);
-int hfs_inactive(struct vop_inactive_args *);
 int hfs_read(struct vop_read_args *);
+int hfs_readdir(struct vop_readdir_args *);
+int hfs_readlink(struct vop_readlink_args *);
 int hfs_ioctl(struct vop_ioctl_args *);
 
-static struct dirent dot = {
-	.d_fileno = 1,
-	.d_off = 0,
-	.d_reclen = _GENERIC_DIRLEN(1),
-	.d_namlen = 1,
-	.d_name = ".",
-};
+/* hfs_cnode.c */
+int hfs_reclaim(struct vop_reclaim_args *);
+int hfs_inactive(struct vop_inactive_args *);
 
-static struct dirent dotdot = { .d_fileno = 1, .d_off = 0, .d_reclen = _GENERIC_DIRLEN(2), .d_namlen = 2, .d_name = ".." };
+/* hfs_attr.c */
+int hfs_setattr(struct vop_setattr_args *);
+int hfs_getattr(struct vop_getattr_args *);
+
+static int hfs_metasync(struct hfsmount *hfsmp, daddr_t node, proc_t *p);
+
+int
+hfs_write_access(struct vnode *vp, struct ucred *cred, Boolean considerFlags)
+{
+	struct cnode *cp = VTOC(vp);
+	gid_t *gp;
+	int retval = 0;
+	int i;
+
+	/*
+	 * Disallow write attempts on read-only file systems;
+	 * unless the file is a socket, fifo, or a block or
+	 * character device resident on the file system.
+	 */
+	switch (vp->v_type) {
+	case VDIR:
+ 	case VLNK:
+	case VREG:
+		if (VTOVFS(vp)->mnt_flag & MNT_RDONLY)
+			return (EROFS);
+        break;
+	default:
+		break;
+ 	}
+ 
+	/* If immutable bit set, nobody gets to write it. */
+	if (considerFlags && (cp->c_xflags & IMMUTABLE))
+		return (EPERM);
+
+	/* Otherwise, user id 0 always gets access. */
+	if (cred->cr_uid == 0)
+		return (0);
+
+	/* Otherwise, check the owner. */
+	if ((retval = hfs_owner_rights(VTOHFS(vp), cp->c_uid, cred, false)) == 0)
+		return ((cp->c_mode & S_IWUSR) == S_IWUSR ? 0 : EACCES);
+ 
+	/* Otherwise, check the groups. */
+	for (i = 0, gp = cred->cr_groups; i < cred->cr_ngroups; i++, gp++) {
+		if (cp->c_gid == *gp)
+			return ((cp->c_mode & S_IWGRP) == S_IWGRP ? 0 : EACCES);
+ 	}
+ 
+	/* Otherwise, check everyone else. */
+	return ((cp->c_mode & S_IWOTH) == S_IWOTH ? 0 : EACCES);
+}
 
 static int
 hfs_open(struct vop_open_args *ap)
@@ -190,144 +239,6 @@ hfs_pathconf(struct vop_pathconf_args *ap)
 }
 
 int
-hfs_readdir(struct vop_readdir_args *ap)
-{
-	/* {
-		struct vnode *vp;
-		struct uio *uio;
-		struct ucred *cred;
-		int *eofflag;
-		int *ncookies;
-		u_long **cookies;
-	} */
-	register struct uio *uio = ap->a_uio;
-	struct cnode *cp = VTOC(ap->a_vp);
-	struct hfsmount *hfsmp = VTOHFS(ap->a_vp);
-	proc_t *p = curthread;
-	off_t off = uio->uio_offset;
-	int retval = 0;
-	int eofflag = 0;
-	// void *user_start = NULL;
-	// int   user_len;
-
-	if (uio->uio_offset < 0) {
-		return (EINVAL);
-	}
-
-	if (/*ap->a_eofflag != NULL ||*/ ap->a_cookies != NULL || ap->a_ncookies != NULL) {
-		return (EOPNOTSUPP);
-	}
-
-	//
-	// Add . & .. entries
-	// Unlike the original implementation, diroffset needs to be set to 0 for
-	// reading actual directory entries. Instead of modifying uio_offset manually,
-	// diroffset is "reset" to 0 by subtracting d_reclen of . and .. in
-	// hfs_catalog/cat_getdirentries()
-	//
-
-	if (uio->uio_offset < dot.d_reclen) {
-		dot.d_fileno = cp->c_cnid;
-		if ((retval = uiomove((caddr_t)&dot, dot.d_reclen, uio))) {
-			goto Exit;
-		}
-	}
-
-	if (uio->uio_offset < 2 * dotdot.d_reclen) {
-		dotdot.d_fileno = cp->c_parentcnid;
-		if ((retval = uiomove((caddr_t)&dotdot, dotdot.d_reclen, uio))) {
-			goto Exit;
-		}
-	}
-
-	/* If there are no children then we're done */
-	if (cp->c_entries == 0) {
-		eofflag = 1;
-		retval = 0;
-		goto Exit;
-	}
-
-	/* Lock catalog b-tree */
-	retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
-	if (retval) {
-		goto Exit;
-	}
-
-	retval = cat_getdirentries(hfsmp, &cp->c_desc, uio, &eofflag);
-	/* Unlock catalog b-tree */
-	(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
-
-	if (retval != E_NONE) {
-		goto Exit;
-	}
-
-	/* were we already past eof ? */
-	if (uio->uio_offset == off) {
-		retval = E_NONE;
-		goto Exit;
-	}
-
-	cp->c_flag |= C_ACCESS;
-
-Exit:
-	if (ap->a_eofflag)
-		*ap->a_eofflag = eofflag;
-
-	return (retval);
-}
-
-static int
-hfs_readlink(struct vop_readlink_args *ap)
-{
-	/* {
-		struct vnode *a_vp;
-		struct uio *a_uio;
-		struct ucred *a_cred;
-	} */
-	int retval;
-	struct vnode *vp = ap->a_vp;
-	struct filefork *fp = VTOF(vp);
-
-	if (vp->v_type != VLNK)
-		return (EINVAL);
-
-	/* Zero length sym links are not allowed */
-	if (fp->ff_size == 0 || fp->ff_size > MAXPATHLEN) {
-		VTOVCB(vp)->vcbFlags |= kHFS_DamagedVolume;
-		return (EINVAL);
-	}
-
-	/* Cache the path so we don't waste buffer cache resources */
-	if (fp->ff_symlinkptr == NULL) {
-		struct buf *bp = NULL;
-
-		fp->ff_symlinkptr = (char *)malloc(fp->ff_size, M_TEMP, M_WAITOK);
-		retval = bread(vp, 0, roundup((int)fp->ff_size, VTOHFS(vp)->hfs_phys_block_size), ap->a_cred, &bp);
-		if (retval) {
-			if (bp)
-				brelse(bp);
-			if (fp->ff_symlinkptr) {
-				free(fp->ff_symlinkptr, M_TEMP);
-				fp->ff_symlinkptr = NULL;
-			}
-			return (retval);
-		}
-		bcopy(bp->b_data, fp->ff_symlinkptr, (size_t)fp->ff_size);
-		if (bp) {
-#ifdef DARWIN_JOURNAL
-			if (VTOHFS(vp)->jnl && (bp->b_flags & B_LOCKED) == 0) {
-				bp->b_flags |= B_INVAL; /* data no longer needed */
-			}
-#endif
-			brelse(bp);
-		}
-	}
-	retval = uiomove((caddr_t)fp->ff_symlinkptr, (int)fp->ff_size, ap->a_uio);
-
-	return (retval);
-}
-
-int
 hfs_access(struct vop_access_args *ap)
 {
 	/* {
@@ -419,6 +330,274 @@ hfs_islocked(struct vop_islocked_args *ap)
 	// return (lockstatus(&VTOC(ap->a_vp)->c_lock));
 	return (lockstatus(ap->a_vp->v_vnlock));
 }
+
+static int
+hfs_fsync(struct vop_fsync_args *ap)
+{
+	 /* {
+		struct vnode *a_vp;
+		struct ucred *a_cred;
+		int a_waitfor;
+		proc_t *a_td;
+	} */ 
+	struct vnode *vp = ap->a_vp;
+	struct cnode *cp = VTOC(vp);
+#ifdef DARWIN_UBC
+	struct filefork *fp = NULL;
+#endif
+	int retval = 0;
+	// register struct buf *bp;
+	struct timeval tv;
+	// struct buf *nbp;
+	// struct hfsmount *hfsmp = VTOHFS(ap->a_vp);
+	// int s;
+	int wait;
+	// int retry = 0;
+
+	wait = (ap->a_waitfor == MNT_WAIT);
+
+	/* HFS directories don't have any data blocks. */
+	if (vp->v_type == VDIR)
+		goto metasync;
+
+	/*
+	 * For system files flush the B-tree header and
+	 * for regular files write out any clusters
+	 */
+	if (vp->v_vflag & VV_SYSTEM) {
+	    if (VTOF(vp)->fcbBTCBPtr != NULL) {
+#ifdef DARWIN_JOURNAL
+			// XXXdbg
+			if (hfsmp->jnl) {
+				if (BTIsDirty(VTOF(vp))) {
+					panic("hfs: system file vp 0x%x has dirty blocks (jnl 0x%x)\n",
+						  vp, hfsmp->jnl);
+				}
+			} else
+#endif /* DARWIN_JOURNAL */
+			{
+				BTFlushPath(VTOF(vp));
+			}
+	    }
+	}
+#ifdef DARWIN_UBC
+	else if (UBCINFOEXISTS(vp))
+		(void) cluster_push(vp);
+#endif /* DARWIN_UBC */
+
+#ifdef DARWIN_UBC
+	/*
+	 * When MNT_WAIT is requested and the zero fill timeout
+	 * has expired then we must explicitly zero out any areas
+	 * that are currently marked invalid (holes).
+	 *
+	 * Files with NODUMP can bypass zero filling here.
+	 */
+	if ((wait || (cp->c_flag & C_ZFWANTSYNC)) &&
+	    ((cp->c_flags & UF_NODUMP) == 0) &&
+	    UBCINFOEXISTS(vp) && (fp = VTOF(vp)) &&
+	    cp->c_zftimeout != 0) {
+		int devblksize;
+		int was_nocache;
+
+		if (gettime() < cp->c_zftimeout) {
+			/* Remember that a force sync was requested. */
+			cp->c_flag |= C_ZFWANTSYNC;
+			goto loop;
+		}	
+		VOP_DEVBLOCKSIZE(cp->c_devvp, &devblksize);
+		was_nocache = ISSET(vp->v_flag, VNOCACHE_DATA);
+		SET(vp->v_flag, VNOCACHE_DATA);	/* Don't cache zeros */
+
+		while (!TAILQ_EMPTY(&fp->ff_invalidranges)) {
+			struct rl_entry *invalid_range = TAILQ_FIRST(&fp->ff_invalidranges);
+			off_t start = invalid_range->rl_start;
+			off_t end = invalid_range->rl_end;
+    		
+			/* The range about to be written must be validated
+			 * first, so that VOP_CMAP() will return the
+			 * appropriate mapping for the cluster code:
+			 */
+			rl_remove(start, end, &fp->ff_invalidranges);
+
+			(void) cluster_write(vp, (struct uio *) 0,
+					fp->ff_size,
+					invalid_range->rl_end + 1,
+					invalid_range->rl_start,
+					(off_t)0, devblksize,
+					IO_HEADZEROFILL | IO_NOZERODIRTY);
+			cp->c_flag |= C_MODIFIED;
+		}
+		(void) cluster_push(vp);
+		if (!was_nocache)
+			CLR(vp->v_flag, VNOCACHE_DATA);
+		cp->c_flag &= ~C_ZFWANTSYNC;
+		cp->c_zftimeout = 0;
+	}
+#endif /* DARWIN_UBC */
+
+	/*
+	 * Flush all dirty buffers associated with a vnode.
+	 */
+#ifdef DARWIN
+	VI_LOCK(vp);
+loop:
+	// s = splbio();
+	for (bp = TAILQ_FIRST(&vp->v_dirtyblkhd); bp; bp = nbp) {
+		nbp = TAILQ_NEXT(bp, b_vnbufs);
+		if (_BUF_LOCK(bp, LK_EXCLUSIVE | LK_NOWAIT))
+			continue;
+		VI_UNLOCK(vp);
+		if ((bp->b_flags & B_DELWRI) == 0)
+			panic("hfs_fsync: bp 0x%x not dirty (hfsmp 0x%x)", bp, hfsmp);
+#ifdef DARWIN_JOURNAL
+		// XXXdbg
+		if (hfsmp->jnl && (bp->b_flags & B_LOCKED)) {
+			if ((bp->b_flags & B_META) == 0) {
+				panic("hfs: bp @ 0x%x is locked but not meta! jnl 0x%x\n",
+					  bp, hfsmp->jnl);
+			}
+			// if journal_active() returns >= 0 then the journal is ok and we 
+			// shouldn't do anything to this locked block (because it is part 
+			// of a transaction).  otherwise we'll just go through the normal 
+			// code path and flush the buffer.
+			if (journal_active(hfsmp->jnl) >= 0) {
+				continue;
+			}
+		}
+#endif /* DARWIN_JOURNAL */
+
+		bremfree(bp);
+#ifdef DARWIN
+		bp->b_flags |= B_BUSY;
+		/* Clear B_LOCKED, should only be set on meta files */
+		bp->b_flags &= ~B_LOCKED;
+#endif
+
+		// splx(s);
+		/*
+		 * Wait for I/O associated with indirect blocks to complete,
+		 * since there is no way to quickly wait for them below.
+		 */
+		if (bp->b_vp != vp) /* YYY */
+			printf("hfs_fsync: bp->b_vp != vp\n");
+		if (bp->b_vp == vp || ap->a_waitfor == MNT_NOWAIT)
+			(void) bawrite(bp);
+		else
+			(void) bwrite(bp);
+		VI_LOCK(vp);
+		goto loop;
+	}
+
+	if (wait) {
+		while (vp->v_numoutput) {
+			vp->v_iflag |= VI_BWAIT;
+			msleep((caddr_t)&vp->v_numoutput, VI_MTX(vp),
+				PRIBIO + 1, "hfs_fsync", 0);
+		}
+
+		// XXXdbg -- is checking for hfsmp->jnl == NULL the right
+		//           thing to do?
+#ifdef DARWIN_JOURNAL
+		if (hfsmp->jnl == NULL && vp->v_dirtyblkhd.lh_first) {
+#else
+		if (!TAILQ_EMPTY(&vp->v_dirtyblkhd)) {
+#endif
+			/* still have some dirty buffers */
+			if (retry++ > 10) {
+				vprint("hfs_fsync: dirty", vp);
+				// splx(s);
+				/*
+				 * Looks like the requests are not
+				 * getting queued to the driver.
+				 * Retrying here causes a cpu bound loop.
+				 * Yield to the other threads and hope
+				 * for the best.
+				 */
+				(void)msleep((caddr_t)&vp->v_numoutput, VI_MTX(vp),
+					PRIBIO + 1, "hfs_fsync", hz/10);
+				retry = 0;
+			} else {
+				// splx(s);
+			}
+			/* try again */
+			goto loop;
+		}
+	}
+	VI_UNLOCK(vp);
+	splx(s);
+#else /* !DARWIN */
+	vop_stdfsync(ap);
+#endif /* DARWIN */
+
+metasync:
+   	getmicrotime(&tv);
+	if (vp->v_vflag & VV_SYSTEM) {
+		if (VTOF(vp)->fcbBTCBPtr != NULL)
+			BTSetLastSync(VTOF(vp), tv.tv_sec);
+		cp->c_flag &= ~(C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE);
+	} else /* User file */ {
+		retval = hfs_update(ap->a_vp, &tv, &tv, wait);
+
+		/* When MNT_WAIT is requested push out any delayed meta data */
+   		if ((retval == 0) && wait && cp->c_hint &&
+   		    !ISSET(cp->c_flag, C_DELETED | C_NOEXISTS)) {
+   			hfs_metasync(VTOHFS(vp), cp->c_hint, ap->a_td);
+   		}
+	}
+
+	return (retval);
+}
+
+static int
+hfs_metasync(struct hfsmount *hfsmp, daddr_t node, proc_t *p)
+{
+	struct vnode *vp;
+	struct buf *bp;
+	struct buf *nbp;
+	// int s;
+
+	vp = HFSTOVCB(hfsmp)->catalogRefNum;
+
+#ifdef DARWIN_JOURNAL
+	// XXXdbg - don't need to do this on a journaled volume
+	if (hfsmp->jnl) {
+		return 0;
+	}
+#endif /* DARWIN_JOURNAL */
+
+	if (hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_EXCLUSIVE, p) != 0)
+		return (0);
+
+	/*
+	 * Look for a matching node that has been delayed
+	 * but is not part of a set (B_LOCKED).
+	 */
+	// s = splbio();
+	VI_LOCK(vp);
+	for (bp = TAILQ_FIRST(&vp->v_bufobj.bo_dirty.bv_hd); bp; bp = nbp) {
+		nbp = TAILQ_NEXT(bp, b_bobufs);
+		if (_BUF_LOCK(bp, LK_EXCLUSIVE | LK_NOWAIT))
+			continue;
+		VI_UNLOCK(vp);
+		if (bp->b_lblkno == node) {
+
+			bremfree(bp);
+			// splx(s);
+			(void) bwrite(bp);
+			goto exit;
+		}
+		VI_LOCK(vp);
+		BUF_UNLOCK(bp);
+	}
+	VI_UNLOCK(vp);
+	// splx(s);
+exit:
+	(void) hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+
+	return (0);
+}
+
 
 int
 hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor)
@@ -635,74 +814,206 @@ loop:
 }
 
 static int
-hfs_getattr(struct vop_getattr_args *ap)
+hfs_makenode(int mode, struct vnode *dvp, struct vnode **vpp, struct componentname *cnp)
+{
+	struct cnode *cp = NULL;
+	struct cnode *dcp = VTOC(dvp);
+	struct vnode *tvp = NULL;
+	struct hfsmount *hfsmp = VTOHFS(dvp);
+	struct timespec ts;
+	struct timeval tv;
+	proc_t *p = curthread; // cnp->cn_thread;
+	struct cat_desc in_desc, out_desc;
+	struct cat_attr attr;
+	int error; // , started_tr = 0, grabbed_lock = 0;
+	int vnodetype;
+
+	tvp = NULL;
+	bzero(&out_desc, sizeof(out_desc));
+
+	if ((mode & S_IFMT) == 0)
+		mode |= S_IFREG;
+	vnodetype = IFTOVT(mode);
+
+	/* Check if unmount in progress */
+	if (VTOVFS(dvp)->mnt_kern_flag & MNTK_UNMOUNT) {
+		error = EPERM;
+		goto exit;
+	}	
+		
+	/* Check if were out of usable disk space. */
+	if ((priv_check_cred(cnp->cn_cred, PRIV_VFS_ADMIN) != 0) && (hfs_freeblks(hfsmp, 1) <= 0)) {
+		error = ENOSPC;
+		//goto exit;
+		GOTO(exit);
+	}
+	
+
+	// Set attrs
+	bzero(&attr, sizeof(attr));
+	attr.ca_mode = mode;
+	attr.ca_nlink = vnodetype == VDIR ? 2 : 1;
+	
+	// Set time attrs
+	getnanotime(&ts);
+	attr.ca_mtime = ts.tv_sec;
+	attr.ca_mtime_nsec = ts.tv_nsec;
+	if ((VTOVCB(dvp)->vcbSigWord == kHFSSigWord) && gTimeZone.tz_dsttime) {
+		attr.ca_mtime += 3600;	/* Same as what hfs_update does */
+	}
+	attr.ca_atime = attr.ca_ctime = attr.ca_itime = attr.ca_mtime;
+	
+	// Set perms
+	if (VTOVFS(dvp)->mnt_flag & MNT_UNKNOWNPERMISSIONS) {
+		attr.ca_uid = hfsmp->hfs_uid;
+		attr.ca_gid = hfsmp->hfs_gid;
+	} else {
+		attr.ca_uid = vnodetype == VLNK ? dcp->c_uid : cnp->cn_cred->cr_uid;
+		attr.ca_gid = dcp->c_gid;
+	}
+
+	// Set finder info?
+	
+	if (vnodetype == VLNK) {
+		struct FndrFileInfo *fip;
+
+		fip = (struct FndrFileInfo *)&attr.ca_finderinfo;
+		fip->fdType    = SWAP_BE32(kSymLinkFileType);
+		fip->fdCreator = SWAP_BE32(kSymLinkCreator);
+	}
+
+	
+	if ((attr.ca_mode & S_ISGID) && !groupmember(dcp->c_gid, cnp->cn_cred) /* &&
+	    priv_check_cred(cnp->cn_cred, SUSER_ALLOWJAIL) */) {
+		attr.ca_mode &= ~S_ISGID;
+	}
+
+	if (cnp->cn_flags & ISWHITEOUT) {
+		attr.ca_flags |= UF_OPAQUE;
+	}
+
+	
+	/* Setup the descriptor */
+	bzero(&in_desc, sizeof(in_desc));
+	in_desc.cd_nameptr = cnp->cn_nameptr;
+	in_desc.cd_namelen = cnp->cn_namelen;
+	in_desc.cd_parentcnid = dcp->c_cnid;
+	in_desc.cd_flags = S_ISDIR(mode) ? CD_ISDIR : 0;
+
+	/* Lock catalog b-tree */
+	error = hfs_metafilelocking(VTOHFS(dvp), kHFSCatalogFileID, LK_EXCLUSIVE, p);
+	if (error) {
+		//goto exit;
+		GOTO(exit);
+	}
+
+	error = cat_create(hfsmp, &in_desc, &attr, &out_desc);
+
+	/* Unlock catalog b-tree */
+	(void) hfs_metafilelocking(VTOHFS(dvp), kHFSCatalogFileID, LK_RELEASE, p);		
+	if (error) {
+		// goto exit;
+		GOTO(exit);
+	}
+
+	/* Update the parent directory */
+	dcp->c_childhint = out_desc.cd_hint;	/* Cache directory's location */
+	dcp->c_nlink++;
+	dcp->c_entries++;
+	dcp->c_flag |= C_CHANGE | C_UPDATE;
+	getmicrotime(&tv);
+	(void)hfs_update(dvp, &tv, &tv, 0);
+
+	hfs_volupdate(hfsmp, vnodetype == VDIR ? VOL_MKDIR : VOL_MKFILE,
+		(dcp->c_cnid == kHFSRootFolderID));
+
+			
+	error = hfs_getnewvnode(hfsmp, NULL, &out_desc, 0, &attr, NULL, &tvp);
+	if (error) {
+	//	goto exit;
+		GOTO(exit);
+	}
+	/*
+	 * restore vtype and mode for VBLK and VCHR
+	 */
+	if (vnodetype == VBLK || vnodetype == VCHR) {
+		struct cnode *cp;
+
+		cp = VTOC(tvp);
+		cp->c_mode = mode;
+		tvp->v_type = IFTOVT(mode);
+		cp->c_flag |= C_CHANGE;
+		getmicrotime(&tv);
+		if ((error = hfs_update(tvp, &tv, &tv, 1))) {
+			vput(tvp);
+			//goto exit;
+			GOTO(exit);
+		}
+	}
+
+	*vpp = tvp;
+exit:
+	cat_releasedesc(&out_desc);
+
+	/*
+	 * Check if a file is located in the "Cleanup At Startup"
+	 * directory.  If it is then tag it as NODUMP so that we
+	 * can be lazy about zero filling data holes.
+	 */
+	if ((error == 0) && (vnodetype == VREG) &&
+	    (dcp->c_desc.cd_nameptr != NULL) &&
+	    (strcmp(dcp->c_desc.cd_nameptr, "Cleanup At Startup") == 0)) {
+	   	struct vnode *ddvp;
+		cnid_t parid;
+
+		parid = dcp->c_parentcnid;
+		dvp = NULL;
+
+		/*
+		 * The parent of "Cleanup At Startup" should
+		 * have the ASCII name of the userid.
+		 */
+		if (VFS_VGET(HFSTOVFS(hfsmp), parid, LK_EXCLUSIVE, &ddvp) == 0) {
+			if (VTOC(ddvp)->c_desc.cd_nameptr &&
+			    (cp->c_uid == strtoul(VTOC(ddvp)->c_desc.cd_nameptr, 0, 0))) {
+				cp->c_xflags |= UF_NODUMP;
+				cp->c_flag |= C_CHANGE;
+			}
+			vput(ddvp);
+		}
+	}
+
+	return (error);
+}
+
+static int
+hfs_mkdir(struct vop_mkdir_args *ap)
 {
 	/* {
-		struct vnode *a_vp;
+		struct vnode *a_dvp;
+		struct vnode **a_vpp;
+		struct componentname *a_cnp;
 		struct vattr *a_vap;
-		struct ucred *a_cred;
-		proc_t *a_td;
-	} */
-	struct vnode *vp = ap->a_vp;
-	struct cnode *cp = VTOC(vp);
+	} */ 
 	struct vattr *vap = ap->a_vap;
-	struct timeval tv;
 
-	getmicrotime(&tv);
-	CTIMES(cp, &tv, &tv);
+	return (hfs_makenode(MAKEIMODE(vap->va_type, vap->va_mode),
+				ap->a_dvp, ap->a_vpp, ap->a_cnp));
+}
 
-	vap->va_type = vp->v_type;
-	/*
-	 * [2856576]  Since we are dynamically changing the owner, also
-	 * effectively turn off the set-user-id and set-group-id bits,
-	 * just like chmod(2) would when changing ownership.  This prevents
-	 * a security hole where set-user-id programs run as whoever is
-	 * logged on (or root if nobody is logged in yet!)
-	 */
-	vap->va_mode = (cp->c_uid == UNKNOWNUID) ? cp->c_mode & ~(S_ISUID | S_ISGID) : cp->c_mode;
-	vap->va_nlink = cp->c_nlink;
-#ifdef DARWIN
-	vap->va_uid = (cp->c_uid == UNKNOWNUID) ? console_user : cp->c_uid;
-#else
-	vap->va_uid = (cp->c_uid == UNKNOWNUID) ? 0 : cp->c_uid;
-#endif
-	vap->va_gid = cp->c_gid;
-	vap->va_fsid = dev2udev(cp->c_dev);
-	/*
-	 * Exporting file IDs from HFS Plus:
-	 *
-	 * For "normal" files the c_fileid is the same value as the
-	 * c_cnid.  But for hard link files, they are different - the
-	 * c_cnid belongs to the active directory entry (ie the link)
-	 * and the c_fileid is for the actual inode (ie the data file).
-	 *
-	 * The stat call (getattr) will always return the c_fileid
-	 * and Carbon APIs, which are hardlink-ignorant, will always
-	 * receive the c_cnid (from getattrlist).
-	 */
-	vap->va_fileid = cp->c_fileid;
-	vap->va_atime.tv_sec = cp->c_atime;
-	vap->va_atime.tv_nsec = 0;
-	vap->va_mtime.tv_sec = cp->c_mtime;
-	vap->va_mtime.tv_nsec = cp->c_mtime_nsec;
-	vap->va_ctime.tv_sec = cp->c_ctime;
-	vap->va_ctime.tv_nsec = 0;
-	vap->va_gen = 0;
-	vap->va_flags = cp->c_xflags;
-	vap->va_rdev = 0;
-	vap->va_blocksize = VTOVFS(vp)->mnt_stat.f_iosize;
-	vap->va_filerev = 0;
-	vap->va_spare = 0;
-	if (vp->v_type == VDIR) {
-		vap->va_size = cp->c_nlink * AVERAGE_HFSDIRENTRY_SIZE;
-		vap->va_bytes = 0;
-	} else {
-		vap->va_size = VTOF(vp)->ff_size;
-		vap->va_bytes = (u_quad_t)cp->c_blocks * (u_quad_t)VTOVCB(vp)->blockSize;
-		if (vp->v_type == VBLK || vp->v_type == VCHR)
-			vap->va_rdev = cp->c_rdev;
-	}
-	return (0);
+static int
+hfs_create(struct vop_create_args *ap)
+{
+	/* {
+		struct vnode *a_dvp;
+		struct vnode **a_vpp;
+		struct componentname *a_cnp;
+		struct vattr *a_vap;
+	} */ 
+	struct vattr *vap = ap->a_vap;
+
+	return (hfs_makenode(MAKEIMODE(vap->va_type, vap->va_mode),
+				ap->a_dvp, ap->a_vpp, ap->a_cnp));
 }
 
 static int
@@ -784,9 +1095,9 @@ struct vop_vector hfs_vnodeops = {
 	.vop_cachedlookup = hfs_cachedlookup,
 	.vop_close = hfs_close,
 	.vop_closeextattr = ((void *)(uintptr_t)log_notsupp),
-	.vop_create = ((void *)(uintptr_t)log_notsupp),
+	.vop_create = hfs_create,
 	.vop_deleteextattr = ((void *)(uintptr_t)log_notsupp),
-	.vop_fsync = ((void *)(uintptr_t)log_notsupp),
+	.vop_fsync = hfs_fsync,
 	.vop_getacl = ((void *)(uintptr_t)log_notsupp),
 	.vop_getattr = hfs_getattr,
 	.vop_getextattr = ((void *)(uintptr_t)log_notsupp),
@@ -797,7 +1108,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_link = ((void *)(uintptr_t)log_notsupp),
 	.vop_listextattr = ((void *)(uintptr_t)log_notsupp),
 	.vop_lookup = hfs_lookup,
-	.vop_mkdir = ((void *)(uintptr_t)log_notsupp),
+	.vop_mkdir = hfs_mkdir,
 	.vop_mknod = ((void *)(uintptr_t)log_notsupp),
 	.vop_open = hfs_open,
 	.vop_openextattr = ((void *)(uintptr_t)log_notsupp),
@@ -812,7 +1123,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_rename = ((void *)(uintptr_t)log_notsupp),
 	.vop_rmdir = ((void *)(uintptr_t)log_notsupp),
 	.vop_setacl = ((void *)(uintptr_t)log_notsupp),
-	.vop_setattr = ((void *)(uintptr_t)log_notsupp),
+	.vop_setattr = hfs_setattr,
 	.vop_setextattr = ((void *)(uintptr_t)log_notsupp),
 	.vop_setlabel = ((void *)(uintptr_t)log_notsupp),
 	.vop_strategy = hfs_strategy,
@@ -821,8 +1132,8 @@ struct vop_vector hfs_vnodeops = {
 	.vop_whiteout = ((void *)(uintptr_t)log_notsupp),
 	.vop_write = ((void *)(uintptr_t)log_notsupp),
 	.vop_vptofh = ((void *)(uintptr_t)log_notsupp),
-	.vop_add_writecount = ((void *)(uintptr_t)log_notsupp),
-	.vop_vput_pair = ((void *)(uintptr_t)log_notsupp),
+	// .vop_add_writecount = ((void *)(uintptr_t)log_notsupp),
+	// .vop_vput_pair = ((void *)(uintptr_t)log_notsupp),
 	.vop_set_text = ((void *)(uintptr_t)log_notsupp),
 	.vop_unset_text = ((void *)(uintptr_t)log_notsupp),
 	.vop_unp_bind = ((void *)(uintptr_t)log_notsupp),

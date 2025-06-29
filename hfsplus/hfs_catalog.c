@@ -36,6 +36,8 @@
 #include <sys/libkern.h>
 #include <sys/utfconv.h>
 
+#include <sys/kdb.h>
+
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_catalog.h>
 #include <hfsplus/hfs_endian.h>
@@ -488,6 +490,8 @@ cat_create(struct hfsmount *hfsmp, struct cat_desc *descp, struct cat_attr *attr
 	u_long encoding;
 	int modeformat;
 
+//	kdb_enter("catdesc", "catdesc");
+	// panic("catdesc");
 	modeformat = attrp->ca_mode & S_IFMT;
 
 	vcb = HFSTOVCB(hfsmp);
@@ -503,8 +507,10 @@ cat_create(struct hfsmount *hfsmp, struct cat_desc *descp, struct cat_attr *attr
 	bzero(bto, sizeof(struct btobj));
 
 	result = buildkey(hfsmp, descp, &bto->key, 0);
-	if (result)
+	if (result){
+		// GOTO(exit);
 		goto exit;
+	}
 
 	if (!std_hfs) {
 		encoding = hfs_pickencoding(bto->key.nodeName.unicode, bto->key.nodeName.length);
@@ -513,9 +519,10 @@ cat_create(struct hfsmount *hfsmp, struct cat_desc *descp, struct cat_attr *attr
 
 	// XXXdbg - preflight all btree operations to make sure there's enough space
 	result = BTCheckFreeSpace(fcb);
-	if (result)
+	if (result){
 		goto exit;
-
+		//GOTO(exit);
+	}
 	/*
 	 * Insert the thread record first
 	 */
@@ -543,8 +550,10 @@ cat_create(struct hfsmount *hfsmp, struct cat_desc *descp, struct cat_attr *attr
 			}
 			break;
 		}
-		if (result)
-			goto exit;
+		if (result){
+			// goto exit;
+			GOTO(exit);
+		}
 	}
 
 	/*
@@ -568,6 +577,7 @@ cat_create(struct hfsmount *hfsmp, struct cat_desc *descp, struct cat_attr *attr
 			(void)BTDeleteRecord(fcb, &bto->iterator);
 		}
 		goto exit;
+		//GOTO(exit);
 	}
 
 	/*
@@ -1583,8 +1593,9 @@ buildkey(struct hfsmount *hfsmp, struct cat_desc *descp, HFSPlusCatalogKey *key,
 	int result = 0;
 	size_t unicodeBytes = 0;
 
-	if (descp->cd_namelen == 0 || descp->cd_nameptr[0] == '\0')
+	if (descp->cd_namelen == 0 || descp->cd_nameptr[0] == '\0') {
 		return (EINVAL); /* invalid name */
+	}
 
 	key->parentID = descp->cd_parentcnid;
 	key->nodeName.length = 0;
@@ -1595,6 +1606,7 @@ buildkey(struct hfsmount *hfsmp, struct cat_desc *descp, HFSPlusCatalogKey *key,
 	if ((descp->cd_flags & CD_DECOMPOSED) == 0)
 		utf8_flags |= UTF_DECOMPOSED;
 	result = utf8_decodestr(descp->cd_nameptr, descp->cd_namelen, key->nodeName.unicode, &unicodeBytes, sizeof(key->nodeName.unicode), ':', utf8_flags);
+	
 	key->nodeName.length = unicodeBytes / sizeof(UniChar);
 	key->keyLength = kHFSPlusCatalogKeyMinimumLength + unicodeBytes;
 	if (result) {
@@ -1616,7 +1628,8 @@ buildkey(struct hfsmount *hfsmp, struct cat_desc *descp, HFSPlusCatalogKey *key,
 		hfskey.parentID = key->parentID;
 		hfskey.nodeName[0] = 0;
 		if (key->nodeName.length > 0) {
-			if (unicode_to_hfs(HFSTOVCB(hfsmp), key->nodeName.length * 2, key->nodeName.unicode, &hfskey.nodeName[0], retry) != 0) {
+			result = unicode_to_hfs(HFSTOVCB(hfsmp), key->nodeName.length * 2, key->nodeName.unicode, &hfskey.nodeName[0], retry);
+			if (result) {
 				return (EINVAL);
 			}
 			hfskey.keyLength += hfskey.nodeName[0];

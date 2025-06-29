@@ -29,6 +29,8 @@
 
 #define KERNEL 1
 
+#define GOTO(label)	do { printf("Jumping from: %d\n", __LINE__); goto label; } while (0)
+
 #ifndef NULL
 #define NULL 0
 #define nil  NULL
@@ -74,18 +76,30 @@
 #define suser_cred(cred, flags) priv_check_cred((cred), (flags))
 
 #ifdef __FreeBSD__
+
+/* hfs_readwrite.c */
 void hfs_bstrategy(struct bufobj *, struct buf *);
 int hfs_bwrite(struct buf *bp);
 int hfs_truncate(struct vnode *vp, off_t length, int flags, struct ucred *cred, proc_t *p);
 int hfs_update(struct vnode *vp, struct timeval *access, struct timeval *modify, int waitfor);
 int hfs_bmap(struct vop_bmap_args *);
 int hfs_strategy(struct vop_strategy_args *ap);
+int hfs_ioctl(struct vop_ioctl_args *);
+int hfs_read(struct vop_read_args *);
+int hfs_readdir(struct vop_readdir_args *);
+int hfs_readlink(struct vop_readlink_args *);
+
+/* hfs_vfsutils.c */
 int overflow_extents(struct filefork *);
 void hfs_relnamehints(struct cnode *dcp);
-int hfs_readdir(struct vop_readdir_args *);
-int hfs_read(struct vop_read_args *);
+
+/* hfs_vnops.c */
 int hfs_access(struct vop_access_args *);
-int hfs_ioctl(struct vop_ioctl_args *);
+
+/* hfs_attr.c */
+int hfs_setattr(struct vop_setattr_args *);
+int hfs_getattr(struct vop_getattr_args *);
+int hfs_write_access(struct vnode*, struct ucred*, Boolean);
 
 #endif
 
@@ -287,10 +301,28 @@ typedef struct hfsmount {
 		}                                           \
 	} while (0)
 
-#define hfs_global_exclusive_lock_acquire(hfsmp)                                                \
-	do {                                                                                    \
-		if (hfsmp->blocker) {                                                           \
-			tsleep((caddr_t) & hfsmp->blocker, PRIBIO, "journal_blocker", 0);       \
+#define hfs_global_shared_lock_acquire(hfsmp)					\
+    do {									\
+       if (hfsmp->blocker) {							\
+	      tsleep((caddr_t)&hfsmp->blocker, PRIBIO, "journal_blocker", 0);   \
+	      continue;								\
+       }									\
+       hfsmp->readers++;							\
+       break;									\
+    } while (1)
+
+#define hfs_global_shared_lock_release(hfsmp)     \
+    do {					  \
+	    hfsmp->readers--;			  \
+	    if (hfsmp->readers == 0) {		  \
+	        wakeup((caddr_t)&hfsmp->readers); \
+	    } 
+    } while (0)
+
+#define hfs_global_exclusive_lock_acquire(hfsmp)						\
+	do {											\
+		if (hfsmp->blocker) {								\
+			tsleep((caddr_t) & hfsmp->blocker, PRIBIO, "journal_blocker", 0)        \
 			continue;                                                               \
 		}                                                                               \
 		if (hfsmp->readers != 0) {                                                      \
@@ -325,11 +357,11 @@ typedef struct filefork FCB;
 
 /* structure to hold a "." or ".." directory entry (12 bytes) */
 typedef struct hfsdotentry {
-	u_int32_t d_fileno; /* unique file number */
-	u_int16_t d_reclen; /* length of this structure */
-	u_int8_t d_type;    /* dirent file type */
-	u_int8_t d_namelen; /* len of filename */
-	char d_name[4];	    /* "." or ".." */
+	u_int32_t	d_fileno;	/* unique file number */
+	u_int16_t	d_reclen;	/* length of this structure */
+	u_int8_t	d_type;		/* dirent file type */
+	u_int8_t	d_namelen;	/* len of filename */
+	char		d_name[4];	/* "." or ".." */
 } hfsdotentry;
 
 #define HFS_AVERAGE_NAME_SIZE	 22

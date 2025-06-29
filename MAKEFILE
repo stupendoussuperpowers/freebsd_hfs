@@ -14,6 +14,7 @@ SRCS= hfsplus/hfs_vfsops.c \
 	hfsplus/hfs_encodinghint.c \
 	hfsplus/hfs_quota.c \
 	hfsplus/hfs_lookup.c \
+	hfsplus/hfs_attr.c \
 	hfsplus/rangelist.c \
 	hfsplus/hfscommon/Misc/FileExtentMapping.c \
 	hfsplus/hfscommon/Misc/VolumeAllocation.c \

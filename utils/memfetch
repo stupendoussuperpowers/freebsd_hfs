@@ -4,7 +4,7 @@ import sys
 import subprocess
 import re
 
-KERNEL = "/usr/obj/usr/src/arm64/conf/GENERIC/kernel.debug"
+KERNEL = "/usr/obj/usr/src/arm64.aarch64/sys/GENERIC/kernel.debug"
 KMOD = "/usr/obj/sharedcode/hfs.ko.debug"
 
 def find_func(func, source):

@@ -12,7 +12,7 @@ try:
 	result = subprocess.run(["mount"], capture_output=True, text=True, check=True)
 	result = result.stdout
 
-	if '/hello' or 'hfs,' in result:
+	if '/hello' in result:
 		unmount()
 except Exception as e:
 	print(f"error: {e}")

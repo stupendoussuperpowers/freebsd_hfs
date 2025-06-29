@@ -468,11 +468,128 @@ hfs_statfs(struct mount *mp, struct statfs *sbp)
 	return 0;
 }
 
-static int
-hfs_sync(struct mount *mp, int waitfor)
+static int 
+hfs_sync(struct mount*mp, int waitfor)
 {
-	printf("--- hfs_sync --- stub --- \n");
-	return 0;
+	struct vnode *nvp, *vp;
+	struct cnode *cp;
+	struct hfsmount *hfsmp = VFSTOHFS(mp);
+	ExtendedVCB *vcb;
+	struct vnode *meta_vp[3];
+	int i;
+	int error, allerror = 0;
+	proc_t *p = curthread;
+
+	/*
+	 * During MNT_UPDATE hfs_changefs might be manipulating
+	 * vnodes so back off
+	 */
+	if (mp->mnt_flag & MNT_UPDATE)
+		return (0);
+
+	if (hfsmp->hfs_fs_ronly != 0) {
+		panic("update: rofs mod");
+	};
+	
+loop:
+	MNT_VNODE_FOREACH_ALL(vp, mp, nvp) {
+		cp = VTOC(vp);
+
+		// restart our whole search if this guy is locked
+		// or being reclaimed.
+		if (cp == NULL) {
+			VI_UNLOCK(vp);
+		//	MNT_ILOCK(mp);
+			continue;
+		}
+		
+		if ((vp->v_vflag & VV_SYSTEM) || (vp->v_type == VNON) ||
+		    (((cp->c_flag & (C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE)) == 0) && TAILQ_EMPTY(&vp->v_bufobj.bo_dirty.bv_hd))) {
+			VI_UNLOCK(vp);
+		//	MNT_ILOCK(mp);
+			continue;
+		}
+
+		error = vget(vp, LK_EXCLUSIVE | LK_NOWAIT | LK_INTERLOCK);
+		if (error) {
+		//	MNT_ILOCK(mp);
+			if (error == ENOENT)
+				goto loop;
+			continue;
+		}
+
+		if ((error = VOP_FSYNC(vp, waitfor, p))) {
+			allerror = error;
+		};
+
+		VOP_UNLOCK(vp);	
+		vrele(vp);
+	//	MNT_ILOCK(mp);
+	};
+
+	vcb = HFSTOVCB(hfsmp);
+
+	meta_vp[0] = vcb->extentsRefNum;
+	meta_vp[1] = vcb->catalogRefNum;
+	meta_vp[2] = vcb->allocationsRefNum; /* This is NULL for standard HFS */
+	// MNT_IUNLOCK(mp);
+
+	/* Now sync our three metadata files */
+	for (i = 0; i < 3; ++i) {
+		struct vnode *btvp;
+
+		btvp = meta_vp[i];
+		if ((btvp == 0) || (btvp->v_type == VNON) || (btvp->v_mount != mp))
+			continue;
+		
+		VI_LOCK(btvp);
+		cp = VTOC(btvp);
+		if (((cp->c_flag & (C_ACCESS | C_CHANGE | C_MODIFIED | C_UPDATE)) == 0) && TAILQ_EMPTY(&btvp->v_bufobj.bo_dirty.bv_hd)) {
+			VI_UNLOCK(btvp);
+			continue;
+		}
+		error = vget(btvp, LK_EXCLUSIVE | LK_NOWAIT | LK_INTERLOCK);
+		if (error) {
+			continue;
+		}
+		if ((error = VOP_FSYNC(btvp, waitfor, p)))
+			allerror = error;
+		VOP_UNLOCK(btvp);
+		vrele(btvp);
+	};
+
+	/*
+	 * Force stale file system control information to be flushed.
+	 */
+	if (vcb->vcbSigWord == kHFSSigWord) {
+		vn_lock(hfsmp->hfs_devvp, LK_EXCLUSIVE | LK_RETRY);
+		if ((error = VOP_FSYNC(hfsmp->hfs_devvp, waitfor, p)))
+			allerror = error;
+		VOP_UNLOCK(hfsmp->hfs_devvp);
+	}
+
+	if (IsVCBDirty(vcb)) {
+#ifdef DARWIN_JOURNAL
+		// XXXdbg - debugging, remove
+		if (hfsmp->jnl) {
+			// printf("hfs: sync: strange, a journaled volume w/dirty VCB? jnl 0x%x
+			// hfsmp 0x%x\n", 	  hfsmp->jnl, hfsmp);
+		}
+#endif
+
+		error = hfs_flushvolumeheader(hfsmp, waitfor, 0);
+		if (error)
+			allerror = error;
+	}
+
+#ifdef DARWIN_JOURNAL
+	if (hfsmp->jnl) {
+		journal_flush(hfsmp->jnl);
+	}
+#endif
+
+//err_exit:
+	return (allerror);
 }
 
 static int

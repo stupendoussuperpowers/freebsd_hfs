@@ -47,7 +47,7 @@ extern uid_t console_user;
 #endif
 
 /* Routines that are shared by hfs_setattr: */
-extern int hfs_write_access(struct vnode *vp, struct ucred *cred, struct proc *p, Boolean considerFlags);
+extern int hfs_write_access(struct vnode *vp, struct ucred *cred, Boolean considerFlags);
 
 extern int hfs_chflags(struct vnode *vp, u_long flags, struct ucred *cred, struct proc *p);
 
@@ -172,7 +172,7 @@ hfs_getattrlist(struct vop_getattrlist_args *ap)
 	if ((vp->v_type == VREG) && (alist->commonattr & ATTR_CMN_OBJPERMANENTID) && (VTOVCB(vp)->vcbSigWord != kHFSPlusSigWord)) {
 		if (VTOVFS(vp)->mnt_flag & MNT_RDONLY)
 			return (EROFS);
-		if ((error = hfs_write_access(vp, ap->a_cred, ap->a_p, false)) != 0)
+		if ((error = hfs_write_access(vp, ap->a_cred, false)) != 0)
 			return (error);
 
 		// XXXdbg
@@ -381,7 +381,7 @@ hfs_setattrlist(struct vop_setattrlist_args *ap)
 	 * ignore IMMUTABLE here]:
 	 */
 	if (((alist->commonattr & ~ATTR_OWNERSHIP_SETMASK) != 0) || (alist->volattr != 0) || (alist->dirattr != 0) || (alist->fileattr != 0)) {
-		if ((error = hfs_write_access(vp, cred, p, false)) != 0)
+		if ((error = hfs_write_access(vp, cred, false)) != 0)
 			return (error);
 	}
 

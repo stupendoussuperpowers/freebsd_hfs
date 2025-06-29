@@ -278,6 +278,7 @@ hfs_MountHFSPlusVolume(struct hfsmount *hfsmp, HFSPlusVolumeHeader *vhp, off_t e
 #else
 	if (hfsmp->hfs_fs_ronly == 0 && (SWAP_BE32(vhp->attributes) & kHFSVolumeUnmountedMask) == 0) {
 #endif
+		printf("Dirty Volume Detected.\n");
 		return (EINVAL);
 	}
 

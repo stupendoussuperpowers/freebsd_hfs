@@ -73,9 +73,9 @@
 #include "hfscommon/headers/BTreesInternal.h"
 #include "hfscommon/headers/FileMgrInternal.h"
 
-extern int overflow_extents(struct filefork *fp);
-
 #define can_cluster(size) ((((size & (4096 - 1))) == 0) && (size <= (MAXPHYSIO / 2)))
+
+extern int overflow_extents(struct filefork *fp);
 
 enum {
 	MAXHFSFILESIZE = 0x7FFFFFFF /* this needs to go in the mount structure */
@@ -83,22 +83,21 @@ enum {
 
 extern u_int32_t GetLogicalBlockSize(struct vnode *vp);
 
-/*****************************************************************************
- *
- *	Operations on vnodes
- *
- *****************************************************************************/
+static struct dirent dot = {
+	.d_fileno = 1,
+	.d_off = 0,
+	.d_reclen = _GENERIC_DIRLEN(1),
+	.d_namlen = 1,
+	.d_name = ".",
+};
 
-/*
-#% read		vp	L L L
-#
- vop_read {
-     IN struct vnode *vp;
-     INOUT struct uio *uio;
-     IN int ioflag;
-     IN struct ucred *cred;
-
-     */
+static struct dirent dotdot = { 
+	.d_fileno = 1, 
+	.d_off = 0, 
+	.d_reclen = _GENERIC_DIRLEN(2), 
+	.d_namlen = 2, 
+	.d_name = ".." 
+};
 
 int
 hfs_read(struct vop_read_args *ap)
@@ -217,17 +216,144 @@ hfs_read(struct vop_read_args *ap)
 	return (retval);
 }
 
-/*
- * Write data to a file or directory.
-#% write	vp	L L L
-#
- vop_write {
-     IN struct vnode *vp;
-     INOUT struct uio *uio;
-     IN int ioflag;
-     IN struct ucred *cred;
+int
+hfs_readdir(struct vop_readdir_args *ap)
+{
+	/* {
+		struct vnode *vp;
+		struct uio *uio;
+		struct ucred *cred;
+		int *eofflag;
+		int *ncookies;
+		u_long **cookies;
+	} */
+	register struct uio *uio = ap->a_uio;
+	struct cnode *cp = VTOC(ap->a_vp);
+	struct hfsmount *hfsmp = VTOHFS(ap->a_vp);
+	proc_t *p = curthread;
+	off_t off = uio->uio_offset;
+	int retval = 0;
+	int eofflag = 0;
+	// void *user_start = NULL;
+	// int   user_len;
 
-     */
+	if (uio->uio_offset < 0) {
+		return (EINVAL);
+	}
+
+	if (/*ap->a_eofflag != NULL ||*/ ap->a_cookies != NULL || ap->a_ncookies != NULL) {
+		return (EOPNOTSUPP);
+	}
+
+	//
+	// Add . & .. entries
+	// Unlike the original implementation, diroffset needs to be set to 0 for
+	// reading actual directory entries. Instead of modifying uio_offset manually,
+	// diroffset is "reset" to 0 by subtracting d_reclen of . and .. in
+	// hfs_catalog/cat_getdirentries()
+	//
+
+	if (uio->uio_offset < dot.d_reclen) {
+		dot.d_fileno = cp->c_cnid;
+		if ((retval = uiomove((caddr_t)&dot, dot.d_reclen, uio))) {
+			goto Exit;
+		}
+	}
+
+	if (uio->uio_offset < 2 * dotdot.d_reclen) {
+		dotdot.d_fileno = cp->c_parentcnid;
+		if ((retval = uiomove((caddr_t)&dotdot, dotdot.d_reclen, uio))) {
+			goto Exit;
+		}
+	}
+
+	/* If there are no children then we're done */
+	if (cp->c_entries == 0) {
+		eofflag = 1;
+		retval = 0;
+		goto Exit;
+	}
+
+	/* Lock catalog b-tree */
+	retval = hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_SHARED, p);
+	if (retval) {
+		goto Exit;
+	}
+
+	retval = cat_getdirentries(hfsmp, &cp->c_desc, uio, &eofflag);
+	/* Unlock catalog b-tree */
+	(void)hfs_metafilelocking(hfsmp, kHFSCatalogFileID, LK_RELEASE, p);
+
+	if (retval != E_NONE) {
+		goto Exit;
+	}
+
+	/* were we already past eof ? */
+	if (uio->uio_offset == off) {
+		retval = E_NONE;
+		goto Exit;
+	}
+
+	cp->c_flag |= C_ACCESS;
+
+Exit:
+	if (ap->a_eofflag)
+		*ap->a_eofflag = eofflag;
+
+	return (retval);
+}
+
+int
+hfs_readlink(struct vop_readlink_args *ap)
+{
+	/* {
+		struct vnode *a_vp;
+		struct uio *a_uio;
+		struct ucred *a_cred;
+	} */
+	int retval;
+	struct vnode *vp = ap->a_vp;
+	struct filefork *fp = VTOF(vp);
+
+	if (vp->v_type != VLNK)
+		return (EINVAL);
+
+	/* Zero length sym links are not allowed */
+	if (fp->ff_size == 0 || fp->ff_size > MAXPATHLEN) {
+		VTOVCB(vp)->vcbFlags |= kHFS_DamagedVolume;
+		return (EINVAL);
+	}
+
+	/* Cache the path so we don't waste buffer cache resources */
+	if (fp->ff_symlinkptr == NULL) {
+		struct buf *bp = NULL;
+
+		fp->ff_symlinkptr = (char *)malloc(fp->ff_size, M_TEMP, M_WAITOK);
+		retval = bread(vp, 0, roundup((int)fp->ff_size, VTOHFS(vp)->hfs_phys_block_size), ap->a_cred, &bp);
+		if (retval) {
+			if (bp)
+				brelse(bp);
+			if (fp->ff_symlinkptr) {
+				free(fp->ff_symlinkptr, M_TEMP);
+				fp->ff_symlinkptr = NULL;
+			}
+			return (retval);
+		}
+		bcopy(bp->b_data, fp->ff_symlinkptr, (size_t)fp->ff_size);
+		if (bp) {
+#ifdef DARWIN_JOURNAL
+			if (VTOHFS(vp)->jnl && (bp->b_flags & B_LOCKED) == 0) {
+				bp->b_flags |= B_INVAL; /* data no longer needed */
+			}
+#endif
+			brelse(bp);
+		}
+	}
+	retval = uiomove((caddr_t)fp->ff_symlinkptr, (int)fp->ff_size, ap->a_uio);
+
+	return (retval);
+}
+
 static int
 hfs_write(struct vop_write_args *ap)
 {
@@ -675,21 +801,6 @@ ioerr_exit:
 	return (retval);
 }
 
-/*
-
-#% ioctl	vp	U U U
-#
- vop_ioctl {
-     IN struct vnode *vp;
-     IN u_long command;
-     IN caddr_t data;
-     IN int fflag;
-     IN struct ucred *cred;
-     IN struct proc *p;
-
-     */
-
-/* ARGSUSED */
 int
 hfs_ioctl(struct vop_ioctl_args *ap)
 {
@@ -705,26 +816,6 @@ hfs_ioctl(struct vop_ioctl_args *ap)
 	printf("FIOSEEKDATA: %lu | FIOSEEKHOLE: %lu\n", FIOSEEKDATA, FIOSEEKHOLE);
 	return 45;
 }
-
-#ifdef DARWIN
-/* ARGSUSED */
-int
-hfs_select(ap)
-struct vop_select_args /* {
-	struct vnode *a_vp;
-	int  a_which;
-	int  a_fflags;
-	struct ucred *a_cred;
-	void *a_wql;
-	struct proc *a_p;
-} */ *ap;
-{
-	/*
-	 * We should really check to see if I/O is possible.
-	 */
-	return (1);
-}
-#endif /* DARWIN */
 
 /*
  * Bmap converts a the logical block number of a file to its physical block
@@ -1616,315 +1707,6 @@ Err_Exit:
 	return (retval);
 }
 
-#ifdef DARWIN
-/*
-#
-#% allocate	vp	L L L
-#
-vop_allocate {
-	IN struct vnode *vp;
-	IN off_t length;
-	IN int flags;
-	OUT off_t *bytesallocated;
-	IN off_t offset;
-	IN struct ucred *cred;
-	IN struct proc *p;
-};
- * allocate a cnode to at most length size
- */
-int
-hfs_allocate(ap)
-struct vop_allocate_args /* {
-	struct vnode *a_vp;
-	off_t a_length;
-	u_int32_t  a_flags;
-	off_t *a_bytesallocated;
-	off_t a_offset;
-	struct ucred *a_cred;
-	struct proc *a_p;
-} */ *ap;
-{
-	struct vnode *vp = ap->a_vp;
-	struct cnode *cp = VTOC(vp);
-	struct filefork *fp = VTOF(vp);
-	off_t length = ap->a_length;
-	off_t startingPEOF;
-	off_t moreBytesRequested;
-	off_t actualBytesAdded;
-	off_t filebytes;
-	u_long fileblocks;
-	long vflags;
-	struct timeval tv;
-	int retval, retval2;
-	UInt32 blockHint;
-	UInt32 extendFlags = 0; /* For call to ExtendFileC */
-	struct hfsmount *hfsmp;
-
-	hfsmp = VTOHFS(vp);
-
-	*(ap->a_bytesallocated) = 0;
-	fileblocks = fp->ff_blocks;
-	filebytes = (off_t)fileblocks * (off_t)VTOVCB(vp)->blockSize;
-
-	if (length < (off_t)0)
-		return (EINVAL);
-	if (vp->v_type != VREG && vp->v_type != VLNK)
-		return (EISDIR);
-	if ((ap->a_flags & ALLOCATEFROMVOL) && (length <= filebytes))
-		return (EINVAL);
-
-	/* Fill in the flags word for the call to Extend the file */
-
-	if (ap->a_flags & ALLOCATECONTIG)
-		extendFlags |= kEFContigMask;
-
-	if (ap->a_flags & ALLOCATEALL)
-		extendFlags |= kEFAllMask;
-
-	if (suser_cred(ap->a_cred, 0) != 0)
-		extendFlags |= kEFReserveMask;
-
-	getmicrotime(&tv);
-	retval = E_NONE;
-	blockHint = 0;
-	startingPEOF = filebytes;
-
-	if (ap->a_flags & ALLOCATEFROMPEOF)
-		length += filebytes;
-	else if (ap->a_flags & ALLOCATEFROMVOL)
-		blockHint = ap->a_offset / VTOVCB(vp)->blockSize;
-
-	/* If no changes are necesary, then we're done */
-	if (filebytes == length)
-		goto Std_Exit;
-
-	/*
-	 * Lengthen the size of the file. We must ensure that the
-	 * last byte of the file is allocated. Since the smallest
-	 * value of filebytes is 0, length will be at least 1.
-	 */
-	if (length > filebytes) {
-		moreBytesRequested = length - filebytes;
-
-#if QUOTA
-		retval = hfs_chkdq(cp, (int64_t)(roundup(moreBytesRequested, VTOVCB(vp)->blockSize)), ap->a_cred, 0);
-		if (retval)
-			return (retval);
-
-#endif /* QUOTA */
-#ifdef DARWIN_JOURNAL
-		// XXXdbg
-		hfs_global_shared_lock_acquire(hfsmp);
-		if (hfsmp->jnl) {
-			if (journal_start_transaction(hfsmp->jnl) != 0) {
-				retval = EINVAL;
-				goto Err_Exit;
-			}
-		}
-#endif
-
-		/* lock extents b-tree (also protects volume bitmap) */
-		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, ap->a_p);
-		if (retval) {
-#ifdef DARWIN_JOURNAL
-			if (hfsmp->jnl) {
-				journal_end_transaction(hfsmp->jnl);
-			}
-			hfs_global_shared_lock_release(hfsmp);
-#endif
-			goto Err_Exit;
-		}
-
-		retval = MacToVFSError(ExtendFileC(VTOVCB(vp), (FCB *)fp, moreBytesRequested, blockHint, extendFlags, &actualBytesAdded));
-
-		*(ap->a_bytesallocated) = actualBytesAdded;
-		filebytes = (off_t)fp->ff_blocks * (off_t)VTOVCB(vp)->blockSize;
-
-		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, ap->a_p);
-
-#ifdef DARWIN_JOURNAL
-		// XXXdbg
-		if (hfsmp->jnl) {
-			hfs_flushvolumeheader(hfsmp, MNT_NOWAIT, 0);
-			journal_end_transaction(hfsmp->jnl);
-		}
-		hfs_global_shared_lock_release(hfsmp);
-#endif
-
-		/*
-		 * if we get an error and no changes were made then exit
-		 * otherwise we must do the VOP_UPDATE to reflect the changes
-		 */
-		if (retval && (startingPEOF == filebytes))
-			goto Err_Exit;
-
-		/*
-		 * Adjust actualBytesAdded to be allocation block aligned, not
-		 * clump size aligned.
-		 * NOTE: So what we are reporting does not affect reality
-		 * until the file is closed, when we truncate the file to
-		 * allocation block size.
-		 */
-		if ((actualBytesAdded != 0) && (moreBytesRequested < actualBytesAdded))
-			*(ap->a_bytesallocated) = roundup(moreBytesRequested, (off_t)VTOVCB(vp)->blockSize);
-
-	} else { /* Shorten the size of the file */
-
-		if (fp->ff_size > length) {
-			/*
-			 * Any buffers that are past the truncation point need
-			 * to be invalidated (to maintain buffer cache
-			 * consistency).  For simplicity, we invalidate all the
-			 * buffers by calling vinvalbuf.
-			 */
-			vflags = ((length > 0) ? V_SAVE : 0) | V_SAVEMETA;
-			(void)vinvalbuf(vp, vflags, ap->a_cred, ap->a_p, 0, 0);
-		}
-
-#ifdef DARWIN_JOURNAL
-		// XXXdbg
-		hfs_global_shared_lock_acquire(hfsmp);
-		if (hfsmp->jnl) {
-			if (journal_start_transaction(hfsmp->jnl) != 0) {
-				retval = EINVAL;
-				goto Err_Exit;
-			}
-		}
-#endif
-
-		/* lock extents b-tree (also protects volume bitmap) */
-		retval = hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_EXCLUSIVE, ap->a_p);
-		if (retval) {
-#ifdef DARWIN_JOURNAL
-			if (hfsmp->jnl) {
-				journal_end_transaction(hfsmp->jnl);
-			}
-			hfs_global_shared_lock_release(hfsmp);
-#endif
-
-			goto Err_Exit;
-		}
-
-		retval = MacToVFSError(TruncateFileC(VTOVCB(vp), (FCB *)fp, length, false));
-		(void)hfs_metafilelocking(VTOHFS(vp), kHFSExtentsFileID, LK_RELEASE, ap->a_p);
-		filebytes = (off_t)fp->ff_blocks * (off_t)VTOVCB(vp)->blockSize;
-
-#ifdef DARWIN_JOURNAL
-		if (hfsmp->jnl) {
-			hfs_flushvolumeheader(hfsmp, MNT_NOWAIT, 0);
-			journal_end_transaction(hfsmp->jnl);
-		}
-		hfs_global_shared_lock_release(hfsmp);
-#endif
-
-		/*
-		 * if we get an error and no changes were made then exit
-		 * otherwise we must do the VOP_UPDATE to reflect the changes
-		 */
-		if (retval && (startingPEOF == filebytes))
-			goto Err_Exit;
-#if QUOTA
-		/* These are  bytesreleased */
-		(void)hfs_chkdq(cp, (int64_t)-((startingPEOF - filebytes)), NOCRED, 0);
-#endif /* QUOTA */
-
-		if (fp->ff_size > filebytes) {
-			fp->ff_size = filebytes;
-
-#ifdef DARWIN_UBC
-			if (UBCISVALID(vp))
-				ubc_setsize(vp, fp->ff_size); /* XXX check errors */
-#endif
-		}
-	}
-
-Std_Exit:
-	cp->c_flag |= C_CHANGE | C_UPDATE;
-	retval2 = hfs_update(vp, &tv, &tv, MNT_WAIT);
-
-	if (retval == 0)
-		retval = retval2;
-Err_Exit:
-	return (retval);
-}
-
-/*
- * pagein for HFS filesystem
- */
-int
-hfs_pagein(ap)
-struct vop_pagein_args /* {
-	struct vnode *a_vp,
-	upl_t 	      a_pl,
-	vm_offset_t   a_pl_offset,
-	off_t         a_f_offset,
-	size_t        a_size,
-	struct ucred *a_cred,
-	int           a_flags
-} */ *ap;
-{
-	register struct vnode *vp = ap->a_vp;
-	int devBlockSize = 0;
-	int error;
-
-	if (vp->v_type != VREG && vp->v_type != VLNK)
-		panic("hfs_pagein: vp not UBC type\n");
-
-	VOP_DEVBLOCKSIZE(VTOC(vp)->c_devvp, &devBlockSize);
-
-	error = cluster_pagein(vp, ap->a_pl, ap->a_pl_offset, ap->a_f_offset, ap->a_size, (off_t)VTOF(vp)->ff_size, devBlockSize, ap->a_flags);
-	return (error);
-}
-
-/*
- * pageout for HFS filesystem.
- */
-int
-hfs_pageout(ap)
-struct vop_pageout_args /* {
-   struct vnode *a_vp,
-   upl_t         a_pl,
-   vm_offset_t   a_pl_offset,
-   off_t         a_f_offset,
-   size_t        a_size,
-   struct ucred *a_cred,
-   int           a_flags
-} */ *ap;
-{
-	struct vnode *vp = ap->a_vp;
-	struct cnode *cp = VTOC(vp);
-	struct filefork *fp = VTOF(vp);
-	int retval;
-	int devBlockSize = 0;
-	off_t end_of_range;
-	off_t filesize;
-
-	if (UBCINVALID(vp))
-		panic("hfs_pageout: Not a  VREG: vp=%x", vp);
-
-	VOP_DEVBLOCKSIZE(cp->c_devvp, &devBlockSize);
-	filesize = fp->ff_size;
-	end_of_range = ap->a_f_offset + ap->a_size - 1;
-
-	if (end_of_range >= filesize)
-		end_of_range = (off_t)(filesize - 1);
-	if (ap->a_f_offset < filesize)
-		rl_remove(ap->a_f_offset, end_of_range, &fp->ff_invalidranges);
-
-	retval = cluster_pageout(vp, ap->a_pl, ap->a_pl_offset, ap->a_f_offset, ap->a_size, filesize, devBlockSize, ap->a_flags);
-
-	/*
-	 * If we successfully wrote any data, and we are not the superuser
-	 * we clear the setuid and setgid bits as a precaution against
-	 * tampering.
-	 */
-	if (retval == 0 && ap->a_cred && ap->a_cred->cr_uid != 0)
-		cp->c_mode &= ~(S_ISUID | S_ISGID);
-
-	return (retval);
-}
-#endif /* DARWIN */
-
 void
 hfs_bstrategy(struct bufobj *bo, struct buf *bp)
 {
@@ -1946,7 +1728,7 @@ int
 hfs_bwrite(struct buf *bp)
 {
 	int retval = 0;
-	register struct vnode *vp = bp->b_vp;
+	struct vnode *vp = bp->b_vp;
 #if BYTE_ORDER == LITTLE_ENDIAN
 	BlockDescriptor block;
 

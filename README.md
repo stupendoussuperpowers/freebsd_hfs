@@ -3,18 +3,23 @@
 ### Status
 
 #### Features
-- [x] Mounting (RO)
+- [x] Mounting (RO, RW)
 - [x] Unmounting
-- [ ] Read support for directories, files
-- [ ] Read support for attributes
-- [ ] Write support for directories, files
-- [ ] Write support for attributes
+- Directories
+    - [x] read (`ls`, `ls -a`)
+    - [x] stat (`stat`, `ls -l`)
+    - [x] make (`mkdir`)
+- Files
+    - [x] create (`touch`, etc.)
+    - [x] read (`cat`, etc.)
+    - [ ] mmap
+    - [ ] write
 - [ ] Journalling support
 #### Internal
 - [x] Port to modern FreeBSD VFS APIs (vop/vfs vectors, VOP_* functions)
 - [ ] Build/port tests
 - [ ] Native implementation/port of `hfscommon/` code
-- [ ] Remove dependence on macOS stubs and type aliases
+- [~] Remove dependence on macOS stubs and type aliases
 #### Userland Binaries (Rust)
 - [x] mount_hfs
 - [ ] newfs_hfs
