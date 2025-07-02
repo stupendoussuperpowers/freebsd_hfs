@@ -113,7 +113,7 @@ static OSErr ReadBitmapBlock(
 	ExtendedVCB		*vcb,
 	UInt32			bit,
 	UInt32			**buffer,
-	UInt32			*blockRef);
+	uintptr_t		*blockRef);
 
 static OSErr ReleaseBitmapBlock(
 	ExtendedVCB		*vcb,
@@ -415,10 +415,10 @@ UInt32 FileBytesToBlocks(SInt64 numerator, UInt32 denominator)
 ;_______________________________________________________________________
 */
 static OSErr ReadBitmapBlock(
-	ExtendedVCB		*vcb,
-	UInt32			bit,
-	UInt32			**buffer,
-	UInt32			*blockRef)
+	ExtendedVCB *vcb,
+	UInt32 bit,
+	UInt32 **buffer,
+	uintptr_t *blockRef)
 {
 	OSErr			err;
 	struct buf *bp = NULL;
@@ -606,7 +606,7 @@ static OSErr BlockAllocateAny(
 	register UInt32	wordsLeft;		//	Number of words left in this bitmap block
     UInt32			*buffer = NULL;
     UInt32			*currCache = NULL;
-	UInt32  blockRef;
+	uintptr_t /*UInt32*/  blockRef;
 	UInt32  bitsPerBlock;
 	UInt32  wordsPerBlock;
 	Boolean dirty = false;
@@ -872,7 +872,7 @@ static OSErr BlockMarkAllocated(
 	UInt32			firstBit;		//	Bit index within word of first bit to allocate
 	UInt32			numBits;		//	Number of bits in word to allocate
 	UInt32			*buffer = NULL;
-	UInt32  blockRef;
+	uintptr_t /*UInt32*/  blockRef;
 	UInt32  bitsPerBlock;
 	UInt32  wordsPerBlock;
 #ifdef DARWIN_JOURNAL
@@ -1047,7 +1047,7 @@ static OSErr BlockMarkFree(
 	UInt32			firstBit;		//	Bit index within word of first bit to allocate
 	UInt32			numBits;		//	Number of bits in word to allocate
 	UInt32			*buffer = NULL;
-	UInt32  blockRef;
+	uintptr_t /*UInt32*/  blockRef;
 	UInt32  bitsPerBlock;
 	UInt32  wordsPerBlock;
 #ifdef DARWIN_JOURNAL
@@ -1240,7 +1240,7 @@ static OSErr BlockFindContiguous(
 	register UInt32	bitMask;
 	register UInt32	wordsLeft;
 	register UInt32	tempWord;
-	UInt32  blockRef;
+	uintptr_t /*UInt32*/  blockRef;
 	UInt32  wordsPerBlock;
 
 	if ((endingBlock - startingBlock) < minBlocks)
@@ -1258,8 +1258,9 @@ static OSErr BlockFindContiguous(
 	//	Pre-read the first bitmap block.
 	//
 	err = ReadBitmapBlock(vcb, currentBlock, &buffer, &blockRef);
-	if ( err != noErr ) goto ErrorExit;
-
+	if ( err != noErr ) { 
+		goto ErrorExit;
+	}
 	//
 	//	Figure out where currentBlock is within the buffer.
 	//
@@ -1313,8 +1314,9 @@ static OSErr BlockFindContiguous(
 				if (err != noErr) goto ErrorExit;
 
 				err = ReadBitmapBlock(vcb, currentBlock, &buffer, &blockRef);
-				if ( err != noErr ) goto ErrorExit;
-				
+				if ( err != noErr ) {
+					goto ErrorExit;
+				}
 				currentWord = buffer;
 				wordsLeft = wordsPerBlock;
 			}
@@ -1389,8 +1391,9 @@ FoundUnused:
 				if (err != noErr) goto ErrorExit;
 
 				err = ReadBitmapBlock(vcb, currentBlock, &buffer, &blockRef);
-				if ( err != noErr ) goto ErrorExit;
-				
+				if ( err != noErr ) {
+					goto ErrorExit;
+				}
 				currentWord = buffer;
 				wordsLeft = wordsPerBlock;
 			}

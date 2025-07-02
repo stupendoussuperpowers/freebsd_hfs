@@ -45,6 +45,7 @@ int hfs_read(struct vop_read_args *);
 int hfs_readdir(struct vop_readdir_args *);
 int hfs_readlink(struct vop_readlink_args *);
 int hfs_ioctl(struct vop_ioctl_args *);
+int hfs_write(struct vop_write_args *);
 
 /* hfs_cnode.c */
 int hfs_reclaim(struct vop_reclaim_args *);
@@ -1130,7 +1131,7 @@ struct vop_vector hfs_vnodeops = {
 	.vop_symlink = ((void *)(uintptr_t)log_notsupp),
 	.vop_unlock = hfs_unlock,
 	.vop_whiteout = ((void *)(uintptr_t)log_notsupp),
-	.vop_write = ((void *)(uintptr_t)log_notsupp),
+	.vop_write = hfs_write,
 	.vop_vptofh = ((void *)(uintptr_t)log_notsupp),
 	// .vop_add_writecount = ((void *)(uintptr_t)log_notsupp),
 	// .vop_vput_pair = ((void *)(uintptr_t)log_notsupp),

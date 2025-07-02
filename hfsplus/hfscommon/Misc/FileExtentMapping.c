@@ -155,6 +155,9 @@
 
 #include <hfsplus/hfs.h>
 #include <hfsplus/hfs_format.h>
+
+#include <sys/kdb.h>
+
 #include <hfsplus/hfs_endian.h>
 
 #include "../headers/FileMgrInternal.h"
@@ -1002,13 +1005,9 @@ SInt32 CompareExtentKeysPlus( const HFSPlusExtentKey *searchKey, const HFSPlusEx
 // Note: 		ExtendFile updates the PEOF in the FCB.
 //_________________________________________________________________________________
 
-OSErr ExtendFileC (
-	ExtendedVCB		*vcb,				// volume that file resides on
-	FCB				*fcb,				// FCB of file to truncate
-	SInt64			bytesToAdd,			// number of bytes to allocate
-	UInt32			blockHint,			// desired starting allocation block
-	UInt32			flags,				// EFContig and/or EFAll
-	SInt64			*actualBytesAdded)	// number of bytes actually allocated
+OSErr 
+ExtendFileC(ExtendedVCB *vcb, FCB *fcb, SInt64 bytesToAdd, UInt32 blockHint, 
+	    UInt32 flags, SInt64 *actualBytesAdded)
 {
 	OSErr				err;
 	UInt32				volumeBlockSize;
@@ -1031,7 +1030,7 @@ OSErr ExtendFileC (
 	SInt64				peof;
 	UInt32				prevblocks;
 	
-
+	// kdb_enter("extend file c", "extend file c");
 	needsFlush = false;
 	*actualBytesAdded = 0;
 	volumeBlockSize = vcb->blockSize;
@@ -1059,7 +1058,6 @@ OSErr ExtendFileC (
 	//
 	blocksToAdd = FileBytesToBlocks(bytesToAdd, volumeBlockSize);
 	bytesToAdd = (SInt64)((SInt64)blocksToAdd * (SInt64)volumeBlockSize);
-
 	/*
 	 * For deferred allocations just reserve the blocks.
 	 */
@@ -1151,7 +1149,6 @@ OSErr ExtendFileC (
 		FTOC(fcb)->c_flag |= C_MODIFIED;
 		bytesToAdd -= bytesThisExtent;
 	}
-	
 	//
 	//	Allocate some more space.
 	//

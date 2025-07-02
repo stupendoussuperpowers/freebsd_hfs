@@ -88,6 +88,7 @@ int hfs_ioctl(struct vop_ioctl_args *);
 int hfs_read(struct vop_read_args *);
 int hfs_readdir(struct vop_readdir_args *);
 int hfs_readlink(struct vop_readlink_args *);
+int hfs_write(struct vop_write_args *);
 
 /* hfs_vfsutils.c */
 int overflow_extents(struct filefork *);

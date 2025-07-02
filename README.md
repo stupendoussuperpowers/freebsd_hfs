@@ -13,7 +13,7 @@
     - [x] create (`touch`, etc.)
     - [x] read (`cat`, etc.)
     - [ ] mmap
-    - [ ] write
+    - [x] write (`echo`, `write`, python3 fs, etc.)
 - [ ] Journalling support
 #### Internal
 - [x] Port to modern FreeBSD VFS APIs (vop/vfs vectors, VOP_* functions)
